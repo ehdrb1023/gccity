@@ -1,0 +1,102 @@
+import { db } from '@/lib/db';
+
+export type AppState = {
+  discoveryUntil: string | null;
+  configVersion: number;
+  botLastSeenAt: string | null;
+  botLastGapMs: number | null;
+};
+
+const ROW = { id: 1 };
+
+export async function getAppState(): Promise<AppState> {
+  const { data, error } = await db()
+    .from('app_state')
+    .select('discovery_until, config_version, bot_last_seen_at, bot_last_gap_ms')
+    .eq('id', 1)
+    .maybeSingle();
+  // supabase-js 는 쿼리 실패를 throw 하지 않는다. 조용히 기본값으로 넘어가면
+  // "방 찾기 모드가 안 켜진다" 를 코드에서 찾게 된다.
+  if (error) throw new Error(`app_state 조회 실패: ${error.message}`);
+  if (!data) throw new Error('app_state 행이 없다 — 0001_init.sql 의 insert 를 실행할 것');
+  return {
+    discoveryUntil: data.discovery_until,
+    configVersion: Number(data.config_version),
+    botLastSeenAt: data.bot_last_seen_at,
+    botLastGapMs: data.bot_last_gap_ms,
+  };
+}
+
+export function discoveryOn(state: AppState, now = Date.now()): boolean {
+  if (!state.discoveryUntil) return false;
+  const t = Date.parse(state.discoveryUntil);
+  return !Number.isNaN(t) && t > now;
+}
+
+/**
+ * 봇이 서버를 두드린 시각을 남긴다. 봇 라우트 셋이 모두 이걸 부른다.
+ *
+ * 간격(gap)을 봇이 아니라 **서버가** 계산하는 이유: 봇이 죽었다 살아나면 자기 기준의
+ * 간격은 리셋된다. 서버 기준이라야 "몇 분간 신호가 없었는가" 가 남는다.
+ * 그 값이 Doze(간격만 벌어짐)와 죽음(끊김)을 가르는 유일한 단서다.
+ */
+export async function touchHeartbeat(): Promise<void> {
+  const now = new Date();
+  const { data } = await db().from('app_state').select('bot_last_seen_at').eq('id', 1).maybeSingle();
+  const prev = data?.bot_last_seen_at ? Date.parse(data.bot_last_seen_at) : null;
+  const gap = prev && !Number.isNaN(prev) ? Math.max(0, now.getTime() - prev) : null;
+  const { error } = await db()
+    .from('app_state')
+    .update({ bot_last_seen_at: now.toISOString(), bot_last_gap_ms: gap, updated_at: now.toISOString() })
+    .match(ROW);
+  if (error) console.error('[gccity] heartbeat 갱신 실패:', error.message);
+}
+
+/** 봇이 설정을 다시 받아가게 만드는 신호. 팔로우·방 찾기 모드가 바뀔 때마다 올린다. */
+export async function bumpConfigVersion(): Promise<number> {
+  const state = await getAppState();
+  const next = state.configVersion + 1;
+  const { error } = await db()
+    .from('app_state')
+    .update({ config_version: next, updated_at: new Date().toISOString() })
+    .match(ROW);
+  if (error) throw new Error(`config_version 갱신 실패: ${error.message}`);
+  return next;
+}
+
+export function discoveryMinutes(): number {
+  const raw = Number(process.env.GCCITY_DISCOVERY_MINUTES ?? 30);
+  return Number.isFinite(raw) && raw > 0 ? Math.min(raw, 180) : 30;
+}
+
+/**
+ * 방 찾기 모드를 켜고 끈다.
+ *
+ * ★ 반드시 시한부다. 켜져 있는 동안에는 팔로우하지 않은 방(=개인 카톡)의 발신자명과
+ *   본문 앞 몇 자가 서버로 올라온다. 사람이 끄는 걸 잊으면 그게 계속 쌓인다.
+ *   그래서 서버가 시각을 못 박고, 지나면 스스로 꺼진다. 무기한 옵션을 만들지 말 것.
+ */
+export async function setDiscovery(on: boolean): Promise<string | null> {
+  const until = on ? new Date(Date.now() + discoveryMinutes() * 60000).toISOString() : null;
+  const { error } = await db()
+    .from('app_state')
+    .update({ discovery_until: until, updated_at: new Date().toISOString() })
+    .match(ROW);
+  if (error) throw new Error(`방 찾기 모드 변경 실패: ${error.message}`);
+  await bumpConfigVersion();
+  return until;
+}
+
+/**
+ * 시한이 지난 미리보기를 지운다. 대시보드가 볼 때마다 부른다.
+ *
+ * 방 찾기 모드가 꺼졌는데 화면에 개인 카톡 미리보기가 남아 있으면, 그건 저장하지 않기로
+ * 한 것을 저장해둔 것이다. 후보 목록 자체(열쇠·횟수)는 남기고 본문 단서만 지운다.
+ */
+export async function expireStalePreviews(): Promise<void> {
+  const { error } = await db()
+    .from('rooms')
+    .update({ last_sender: null, last_preview: null, preview_expires_at: null })
+    .lt('preview_expires_at', new Date().toISOString());
+  if (error) console.error('[gccity] 미리보기 만료 처리 실패:', error.message);
+}

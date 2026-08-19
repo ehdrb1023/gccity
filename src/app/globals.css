@@ -1,0 +1,160 @@
+:root {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --line: #e6e8ec;
+  --ink: #191f28;
+  --ink-2: #4e5968;
+  --ink-3: #8b95a1;
+  --accent: #3182f6;
+  --ok: #12b886;
+  --warn: #f59f00;
+  --danger: #f03e3e;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 16px rgba(0, 0, 0, .04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181d;
+    --panel: #1e2127;
+    --line: #2c3038;
+    --ink: #eaecef;
+    --ink-2: #b0b8c1;
+    --ink-3: #7b8592;
+    --accent: #4c8dff;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard',
+    'Malgun Gothic', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; cursor: pointer; }
+input { font: inherit; }
+
+/* ── 셸 ─────────────────────────────────────────────── */
+
+.shell { max-width: 1180px; margin: 0 auto; padding: 20px 16px 64px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 18px; margin-bottom: 16px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+
+.brand { font-weight: 700; font-size: 17px; letter-spacing: -.3px; }
+.brand span { color: var(--ink-3); font-weight: 500; font-size: 13px; margin-left: 8px; }
+.spacer { flex: 1; }
+
+/* 봇 상태. 두 줄을 분리해서 보여준다 — 위는 "봇이 살아 있나", 아래는 "수집이 되고 있나".
+   같은 줄에 두면 조용한 방 때문에 멀쩡한 봇을 죽은 것으로 읽는다. */
+.health { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.ok { background: var(--ok); }
+.dot.lagging { background: var(--warn); }
+.dot.down { background: var(--danger); }
+.dot.unknown { background: var(--ink-3); }
+.health b { font-weight: 600; }
+.health small { color: var(--ink-3); }
+
+.btn {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  border-radius: 10px; padding: 7px 13px; font-size: 13px; font-weight: 600;
+  transition: background .12s, border-color .12s;
+}
+.btn:hover { border-color: var(--ink-3); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--ink-3); }
+.btn.ghost:hover { color: var(--ink); }
+.btn:disabled { opacity: .45; cursor: default; }
+
+/* ── 본체 ───────────────────────────────────────────── */
+
+.cols { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.panel > header {
+  padding: 13px 16px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 8px;
+}
+.panel > header h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.panel > header .count { color: var(--ink-3); font-size: 12px; font-weight: 600; }
+
+.note {
+  padding: 12px 16px; font-size: 12.5px; color: var(--ink-2);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.note b { color: var(--ink); }
+
+/* ── 방 목록 ────────────────────────────────────────── */
+
+.room {
+  display: block; width: 100%; text-align: left;
+  padding: 12px 16px; border: 0; border-bottom: 1px solid var(--line);
+  background: transparent; color: inherit;
+}
+.room:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.room[data-active='true'] { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.room-top { display: flex; align-items: center; gap: 8px; }
+.room-name { font-weight: 600; font-size: 14px; flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-name.unnamed { color: var(--ink-3); font-weight: 500; font-family: ui-monospace, monospace; font-size: 12px; }
+.room-meta { display: flex; gap: 10px; font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+.room-preview { font-size: 12px; color: var(--ink-2); margin-top: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-actions { display: flex; gap: 6px; padding: 8px 16px 12px; }
+
+.tag {
+  font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px;
+  background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok);
+}
+.tag.muted { background: color-mix(in srgb, var(--ink-3) 14%, transparent); color: var(--ink-3); }
+
+/* ── 타임라인 ───────────────────────────────────────── */
+
+.timeline { padding: 8px 0 16px; max-height: 68vh; overflow-y: auto; }
+.daysep { text-align: center; font-size: 11.5px; color: var(--ink-3); margin: 14px 0 8px; }
+.msg { padding: 5px 18px; display: flex; gap: 10px; align-items: baseline; }
+.msg .who { font-size: 12.5px; font-weight: 700; color: var(--ink-2); flex: none;
+  width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg .body { flex: 1; white-space: pre-wrap; word-break: break-word; font-size: 14px; }
+.msg .at { font-size: 11px; color: var(--ink-3); flex: none; }
+.msg.same .who { visibility: hidden; }
+
+.empty { padding: 46px 20px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+.empty b { display: block; color: var(--ink-2); font-size: 15px; margin-bottom: 6px; }
+
+/* ── 로그인 ─────────────────────────────────────────── */
+
+.login { min-height: 100dvh; display: grid; place-items: center; padding: 20px; }
+.login form {
+  width: 100%; max-width: 320px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 26px 22px; box-shadow: var(--shadow);
+}
+.login h1 { margin: 0 0 4px; font-size: 18px; }
+.login p { margin: 0 0 18px; font-size: 13px; color: var(--ink-3); }
+.login input {
+  width: 100%; padding: 11px 13px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--bg); color: var(--ink); margin-bottom: 10px;
+}
+.login .err { color: var(--danger); font-size: 12.5px; margin: 0 0 10px; }
+.login button { width: 100%; }

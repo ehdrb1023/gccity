@@ -1,0 +1,8 @@
+node_modules/
+.next/
+.env
+.env.local
+*.local.js
+*.local.sql
+next-env.d.ts
+tsconfig.tsbuildinfo
