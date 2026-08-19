@@ -362,33 +362,75 @@ function RoomRow({
   );
 }
 
+/**
+ * 발화자 원판 색. 닉네임에서 결정적으로 뽑는다 —
+ * 오픈채팅은 프로필 이미지를 알 수 없고, 색이 매번 바뀌면 사람을 눈으로 좇을 수 없다.
+ */
+function avatarHue(sender: string): number {
+  let h = 0;
+  for (let i = 0; i < sender.length; i++) h = (h * 31 + sender.charCodeAt(i)) % 360;
+  return h;
+}
+
+function initial(sender: string): string {
+  const t = sender.trim();
+  return t ? t.slice(0, 1) : '?';
+}
+
+/**
+ * 카톡 화면 모양의 타임라인.
+ *
+ * ★ 말풍선을 좌우로 가르지 않는다. 전부 왼쪽이다.
+ *   오픈채팅에는 '우리' 가 없다 — 이 봇은 방에 한 글자도 쓰지 않으므로 내 말풍선이
+ *   존재할 수 없고, 참가자는 전부 동등한 남이다. side='us'/'partner' 판정을 넣지 말 것.
+ *   (speciai-kakao-bot 은 거래처 방이라 그 구분이 있다. 그 화면을 그대로 옮겨오지 말 것.)
+ *
+ * 연속 발화 묶음 규칙은 카톡과 같다 — 이름·프로필은 묶음의 **처음**에만,
+ * 시각은 **마지막**에만 적는다. 같은 사람이 같은 분에 여러 줄 치는 일이 잦은데
+ * 줄마다 시각을 달면 화면이 시각으로 뒤덮인다.
+ */
 function Timeline({ messages }: { messages: Message[] }) {
-  let lastDay = '';
-  let lastSender = '';
+  const rows = messages.map((m, i) => {
+    const prev = messages[i - 1];
+    const next = messages[i + 1];
+    const day = dayLabel(m.sentAt);
+    const newDay = !prev || dayLabel(prev.sentAt) !== day;
+    const headed = newDay || prev.sender !== m.sender;
+    const tailed =
+      !next ||
+      next.sender !== m.sender ||
+      dayLabel(next.sentAt) !== day ||
+      clockTime(next.sentAt) !== clockTime(m.sentAt);
+    return { m, day, newDay, headed, tailed };
+  });
 
   return (
-    <>
-      {messages.map((m) => {
-        const day = dayLabel(m.sentAt);
-        const newDay = day !== lastDay;
-        if (newDay) {
-          lastDay = day;
-          lastSender = '';
-        }
-        const same = m.sender === lastSender;
-        lastSender = m.sender;
-
-        return (
-          <div key={m.id}>
-            {newDay && <div className="daysep">{day}</div>}
-            <div className={`msg ${same ? 'same' : ''}`}>
-              <span className="who">{m.sender || '(이름 없음)'}</span>
-              <span className="body">{m.body}</span>
-              <span className="at">{clockTime(m.sentAt)}</span>
+    <div className="chat">
+      {rows.map(({ m, day, newDay, headed, tailed }) => (
+        <div key={m.id}>
+          {newDay && (
+            <div className="daysep">
+              <span>{day}</span>
+            </div>
+          )}
+          <div className={`kmsg${headed ? ' headed' : ''}`}>
+            {headed ? (
+              <div className="avatar" style={{ background: `hsl(${avatarHue(m.sender)} 42% 62%)` }}>
+                {initial(m.sender)}
+              </div>
+            ) : (
+              <div className="avatar blank" />
+            )}
+            <div className="kbody">
+              {headed && <div className="kname">{m.sender || '(이름 없음)'}</div>}
+              <div className="krow">
+                <div className="bubble">{m.body}</div>
+                {tailed && <time className="kat">{clockTime(m.sentAt)}</time>}
+              </div>
             </div>
           </div>
-        );
-      })}
-    </>
+        </div>
+      ))}
+    </div>
   );
 }
