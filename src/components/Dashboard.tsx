@@ -49,6 +49,9 @@ export default function Dashboard() {
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 후보를 대화 옆에 두지 않는다 — 방 찾기 모드를 켜면 개인 카톡까지 계속 쌓여
+  // 정작 보려던 대화창을 밀어낸다. 목적은 방 하나를 고르는 것이고, 그건 한 번뿐인 일이다.
+  const [tab, setTab] = useState<'chat' | 'find'>('chat');
   const [now, setNow] = useState(() => Date.now());
   const scroller = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
@@ -110,6 +113,16 @@ export default function Dashboard() {
     [load, selected],
   );
 
+  /**
+   * 방 찾기를 켜고 끌 때 탭도 같이 옮긴다.
+   * 탭에 숫자 배지를 달지 않기로 했으므로(방 하나만 고르면 끝나는 일이라 상시 알림이
+   * 필요 없다), 후보가 생겼다는 걸 알려주는 경로는 이 자동 전환이 전부다.
+   */
+  const toggleDiscovery = async (on: boolean) => {
+    setTab(on ? 'find' : 'chat');
+    await act({ action: 'discovery', on });
+  };
+
   if (!state) {
     return (
       <main className="shell">
@@ -153,12 +166,17 @@ export default function Dashboard() {
           </small>
         </div>
 
+        <nav className="tabs">
+          <button data-on={tab === 'chat'} onClick={() => setTab('chat')}>대화</button>
+          <button data-on={tab === 'find'} onClick={() => setTab('find')}>방 찾기</button>
+        </nav>
+
         <div className="spacer" />
 
         <button
           className={`btn ${state.discovery.on ? 'primary' : ''}`}
           disabled={busy}
-          onClick={() => void act({ action: 'discovery', on: !state.discovery.on })}
+          onClick={() => void toggleDiscovery(!state.discovery.on)}
         >
           {state.discovery.on ? `방 찾기 켜짐 · ${discoveryLeft}분 남음` : '방 찾기 모드'}
         </button>
@@ -182,98 +200,148 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="cols">
-        <section className="panel">
-          <header>
-            <h2>방</h2>
-            <span className="count">
-              팔로우 {followed.length} · 후보 {candidates.length}
-            </span>
-          </header>
-
-          {state.discovery.on ? (
-            <div className="note">
-              <b>방 찾기 모드가 켜져 있다.</b> 이 폰에 오는 모든 카톡방의 발신자와 본문 앞 12자가
-              올라온다(개인 카톡 포함). 목표 방을 찾으면 <b>바로 끌 것</b> — {discoveryLeft}분 뒤
-              자동으로 꺼지고, 꺼지면 미리보기는 지워진다.
-            </div>
-          ) : candidates.length === 0 && followed.length === 0 ? (
-            <div className="note">
-              아직 아는 방이 없다. <b>방 찾기 모드</b>를 켜고 목표 오픈채팅방에서 메시지가 오길
-              기다린 뒤, 목록에서 그 방을 팔로우한다.
-            </div>
-          ) : null}
-
-          {followed.map((r) => (
-            <RoomRow
-              key={r.id}
-              room={r}
-              active={r.id === selected}
-              busy={busy}
-              now={now}
-              onSelect={() => setSelected(r.id)}
-              onAct={act}
-            />
-          ))}
-
-          {candidates.length > 0 && (
-            <header style={{ borderTop: '1px solid var(--line)' }}>
-              <h2>후보</h2>
-              <span className="count">팔로우하면 그때부터 대화가 저장된다</span>
+      <div className="stage">
+        {tab === 'chat' ? (
+          <section className="panel">
+            <header>
+              <h2>{current ? roomLabel(current) || shortKey(current.roomKey) : '대화'}</h2>
+              <span className="count">
+                {current
+                  ? `저장 ${current.messageCount}건 · 마지막 수집 ${relTime(current.lastMessageAt, now)}`
+                  : ''}
+              </span>
+              <div className="spacer" />
+              {current?.followed && (
+                <div className="hdr-actions">
+                  <button
+                    className="btn ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      const name = window.prompt('이 방을 뭐라고 부를까?', roomLabel(current));
+                      if (name !== null) void act({ action: 'rename', id: current.id, name });
+                    }}
+                  >
+                    이름
+                  </button>
+                  <button
+                    className="btn ghost"
+                    disabled={busy}
+                    onClick={() => void act({ action: 'unfollow', id: current.id })}
+                  >
+                    팔로우 끄기
+                  </button>
+                </div>
+              )}
             </header>
-          )}
 
-          {candidates.map((r) => (
-            <RoomRow
-              key={r.id}
-              room={r}
-              active={r.id === selected}
-              busy={busy}
-              now={now}
-              onSelect={() => setSelected(r.id)}
-              onAct={act}
-            />
-          ))}
-        </section>
-
-        <section className="panel">
-          <header>
-            <h2>{current ? roomLabel(current) || shortKey(current.roomKey) : '대화'}</h2>
-            <span className="count">
-              {current
-                ? `저장 ${current.messageCount}건 · 마지막 수집 ${relTime(current.lastMessageAt, now)}`
-                : ''}
-            </span>
-          </header>
-
-          <div
-            className="timeline"
-            ref={scroller}
-            onScroll={(e) => {
-              const el = e.currentTarget;
-              stickBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-            }}
-          >
-            {!current ? (
-              <div className="empty">
-                <b>방을 고르세요</b>
-                왼쪽 목록에서 방을 누르면 저장된 대화가 여기 뜬다.
+            {/* 방을 여러 개 팔로우해도 코드가 버티게 둔다(CLAUDE.md). 하나뿐이면 칩은 안 뜬다. */}
+            {followed.length > 1 && (
+              <div className="chips">
+                {followed.map((r) => (
+                  <button
+                    key={r.id}
+                    data-on={r.id === selected}
+                    onClick={() => setSelected(r.id)}
+                  >
+                    {roomLabel(r) || shortKey(r.roomKey)}
+                  </button>
+                ))}
               </div>
-            ) : !current.followed ? (
-              <div className="empty">
-                <b>팔로우하지 않은 방이다</b>
-                이 방의 대화는 저장하지 않는다. 팔로우를 켜면 그 시점부터 쌓인다.
-              </div>
-            ) : state.messages.length === 0 ? (
-              <div className="empty">
-                <b>아직 저장된 대화가 없다</b>
-                방에서 다음 메시지가 오면 몇 초 안에 여기 뜬다.
+            )}
+
+            <div
+              className="timeline"
+              ref={scroller}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                stickBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+              }}
+            >
+              {followed.length === 0 ? (
+                <div className="empty">
+                  <b>아직 따라가는 방이 없다</b>
+                  위 <b>방 찾기</b> 탭에서 목표 오픈채팅방을 골라 팔로우하면 여기에 대화가 쌓인다.
+                </div>
+              ) : !current ? (
+                <div className="empty">
+                  <b>방을 고르세요</b>
+                  위 목록에서 방을 누르면 저장된 대화가 여기 뜬다.
+                </div>
+              ) : !current.followed ? (
+                <div className="empty">
+                  <b>팔로우하지 않은 방이다</b>
+                  이 방의 대화는 저장하지 않는다. 팔로우를 켜면 그 시점부터 쌓인다.
+                </div>
+              ) : state.messages.length === 0 ? (
+                <div className="empty">
+                  <b>아직 저장된 대화가 없다</b>
+                  방에서 다음 메시지가 오면 몇 초 안에 여기 뜬다.
+                </div>
+              ) : (
+                <Timeline messages={state.messages} />
+              )}
+            </div>
+          </section>
+        ) : (
+          <section className="panel">
+            <header>
+              <h2>방 찾기</h2>
+              <span className="count">후보에서 목표 방을 골라 팔로우한다</span>
+            </header>
+
+            {state.discovery.on ? (
+              <div className="note">
+                <b>방 찾기 모드가 켜져 있다.</b> 이 폰에 오는 모든 카톡방의 발신자와 본문 앞 12자가
+                올라온다(개인 카톡 포함). 목표 방을 찾으면 <b>바로 끌 것</b> — {discoveryLeft}분 뒤
+                자동으로 꺼지고, 꺼지면 미리보기는 지워진다.
               </div>
             ) : (
-              <Timeline messages={state.messages} />
+              <div className="note">
+                <b>방 찾기 모드가 꺼져 있다.</b> 오른쪽 위 <b>방 찾기 모드</b> 버튼을 켜고 목표
+                오픈채팅방에서 메시지가 오길 기다리면, 그 방이 아래 후보로 뜬다.
+              </div>
             )}
-          </div>
-        </section>
+
+            {candidates.length === 0 ? (
+              <div className="empty">
+                <b>아직 후보가 없다</b>
+                방 찾기 모드를 켠 뒤 목표 방에 메시지가 와야 여기 나타난다.
+              </div>
+            ) : (
+              candidates.map((r) => (
+                <RoomRow
+                  key={r.id}
+                  room={r}
+                  active={r.id === selected}
+                  busy={busy}
+                  now={now}
+                  onSelect={() => setSelected(r.id)}
+                  onAct={act}
+                />
+              ))
+            )}
+
+            {followed.length > 0 && (
+              <>
+                <header style={{ borderTop: '1px solid var(--line)' }}>
+                  <h2>따라가는 중</h2>
+                  <span className="count">{followed.length}개</span>
+                </header>
+                {followed.map((r) => (
+                  <RoomRow
+                    key={r.id}
+                    room={r}
+                    active={r.id === selected}
+                    busy={busy}
+                    now={now}
+                    onSelect={() => setSelected(r.id)}
+                    onAct={act}
+                  />
+                ))}
+              </>
+            )}
+          </section>
+        )}
       </div>
     </main>
   );

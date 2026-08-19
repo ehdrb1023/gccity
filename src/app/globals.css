@@ -83,8 +83,37 @@ input { font: inherit; }
 
 /* ── 본체 ───────────────────────────────────────────── */
 
-.cols { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
-@media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+/*
+ * 대화가 한가운데다. 후보 목록을 옆에 두지 않는다 —
+ * 방 찾기 모드를 켜면 개인 카톡까지 계속 쌓여서 정작 보려던 대화창을 밀어낸다.
+ * 방을 고르는 일은 한 번뿐이므로 탭 뒤에 둔다.
+ */
+.stage { max-width: 900px; margin: 0 auto; }
+
+/* 탭에 숫자 배지를 달지 않는다. 방 하나만 고르면 끝나는 일이라 상시 알림이 필요 없다. */
+.tabs { display: flex; gap: 2px; margin-left: 8px; }
+.tabs button {
+  border: 0; background: none; cursor: pointer;
+  padding: 6px 13px; border-radius: 999px;
+  font-size: 13.5px; font-weight: 600; color: var(--ink-3);
+  font-family: inherit;
+}
+.tabs button:hover { color: var(--ink-2); }
+.tabs button[data-on='true'] {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+/* 방을 여럿 팔로우했을 때만 뜬다. 하나뿐이면 화면에 없다. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.chips button {
+  border: 1px solid var(--line); background: var(--panel); cursor: pointer;
+  padding: 4px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  color: var(--ink-2); font-family: inherit;
+}
+.chips button[data-on='true'] { border-color: var(--accent); color: var(--accent); }
+
+.hdr-actions { display: flex; gap: 6px; }
 
 .panel {
   background: var(--panel); border: 1px solid var(--line);
