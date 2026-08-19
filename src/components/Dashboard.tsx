@@ -51,7 +51,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   // 후보를 대화 옆에 두지 않는다 — 방 찾기 모드를 켜면 개인 카톡까지 계속 쌓여
   // 정작 보려던 대화창을 밀어낸다. 목적은 방 하나를 고르는 것이고, 그건 한 번뿐인 일이다.
-  const [tab, setTab] = useState<'chat' | 'find'>('chat');
+  const [tab, setTab] = useState<'chat' | 'find' | 'vault'>('chat');
   const [now, setNow] = useState(() => Date.now());
   const scroller = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
@@ -168,6 +168,7 @@ export default function Dashboard() {
 
         <nav className="tabs">
           <button data-on={tab === 'chat'} onClick={() => setTab('chat')}>대화</button>
+          <button data-on={tab === 'vault'} onClick={() => setTab('vault')}>자료실</button>
           <button data-on={tab === 'find'} onClick={() => setTab('find')}>방 찾기</button>
         </nav>
 
@@ -282,6 +283,12 @@ export default function Dashboard() {
               )}
             </div>
           </section>
+        ) : tab === 'vault' ? (
+          <Vault
+            rooms={followed}
+            roomId={selected}
+            onPickRoom={setSelected}
+          />
         ) : (
           <section className="panel">
             <header>
@@ -344,6 +351,272 @@ export default function Dashboard() {
         )}
       </div>
     </main>
+  );
+}
+
+/**
+ * 자료실 — 카톡방별 문서 보관소.
+ *
+ * 봇은 아직 파일을 올리지 않는다. 여기 쌓이는 것은 사람이 손으로 넣은 것이다.
+ * (알림에서 PDF·DOCX 를 꺼내는 것 자체는 가능하다 — speciai-kakao-bot 에 실증 코드가 있다.
+ *  붙이게 되면 봇이 같은 files 테이블에 쌓으면 된다.)
+ *
+ * ★ 파일 바이트는 우리 서버를 지나가지 않는다. 서명 URL 을 받아 Storage 로 직접 올린다.
+ *   Vercel 함수 본문 상한이 4.5MB 라 서버를 거치면 큰 PDF 가 전부 막힌다.
+ */
+type StoredFile = {
+  id: string;
+  name: string;
+  mime: string;
+  sizeBytes: number;
+  note: string | null;
+  createdAt: string;
+};
+
+function humanSize(n: number): string {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+/** 확장자로 갈래를 잡는다. mime 이 비어 오는 경우가 흔하다. */
+function fileKind(f: StoredFile): string {
+  const ext = f.name.slice(f.name.lastIndexOf('.') + 1).toLowerCase();
+  if (ext === 'pdf') return 'PDF';
+  if (ext === 'doc' || ext === 'docx') return 'DOC';
+  if (ext === 'xls' || ext === 'xlsx') return 'XLS';
+  if (ext === 'ppt' || ext === 'pptx') return 'PPT';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic'].includes(ext)) return 'IMG';
+  if (ext === 'hwp' || ext === 'hwpx') return 'HWP';
+  if (ext === 'zip' || ext === 'rar' || ext === '7z') return 'ZIP';
+  if (ext === 'txt' || ext === 'md') return 'TXT';
+  return ext.slice(0, 4).toUpperCase() || 'FILE';
+}
+
+function Vault({
+  rooms,
+  roomId,
+  onPickRoom,
+}: {
+  rooms: Room[];
+  roomId: string | null;
+  onPickRoom: (id: string) => void;
+}) {
+  const [files, setFiles] = useState<StoredFile[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+  const [drag, setDrag] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+
+  const reload = useCallback(async (id: string | null) => {
+    if (!id) {
+      setFiles([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/files?room=${encodeURIComponent(id)}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!json.ok) setErr(json.reason ?? '목록을 읽지 못했다');
+      else {
+        setErr(null);
+        setFiles(json.files);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload(roomId);
+  }, [reload, roomId]);
+
+  /**
+   * sign → Storage 직행 업로드 → confirm.
+   * 실패하면 어느 걸음에서 깨졌는지 그대로 보여준다. 조용히 성공한 척하지 않는다.
+   */
+  const upload = useCallback(
+    async (list: FileList | null) => {
+      if (!roomId || !list || list.length === 0) return;
+      for (let i = 0; i < list.length; i++) {
+        const f = list[i];
+        setProgress(`${f.name} 올리는 중… (${i + 1}/${list.length})`);
+        try {
+          const sres = await fetch('/api/files', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'sign', roomId, name: f.name, size: f.size }),
+          });
+          const sign = await sres.json();
+          if (!sign.ok) throw new Error(sign.reason ?? '서명 URL 실패');
+
+          const put = await fetch(sign.signedUrl, {
+            method: 'PUT',
+            headers: { 'content-type': f.type || 'application/octet-stream' },
+            body: f,
+          });
+          if (!put.ok) throw new Error(`Storage 업로드 실패 (${put.status})`);
+
+          const cres = await fetch('/api/files', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              action: 'confirm',
+              roomId,
+              path: sign.path,
+              name: f.name,
+              mime: f.type,
+              size: f.size,
+            }),
+          });
+          const conf = await cres.json();
+          if (!conf.ok) throw new Error(conf.reason ?? '등록 실패');
+          setErr(null);
+        } catch (e) {
+          setErr(`${f.name} — ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      setProgress(null);
+      await reload(roomId);
+    },
+    [roomId, reload],
+  );
+
+  const act = useCallback(
+    async (body: Record<string, unknown>) => {
+      const res = await fetch('/api/files', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        setErr(json.reason ?? '실패');
+        return null;
+      }
+      setErr(null);
+      return json;
+    },
+    [],
+  );
+
+  return (
+    <section className="panel">
+      <header>
+        <h2>자료실</h2>
+        <span className="count">방마다 따로 쌓인다 · 파일 {files.length}개</span>
+      </header>
+
+      {rooms.length > 1 && (
+        <div className="chips">
+          {rooms.map((r) => (
+            <button key={r.id} data-on={r.id === roomId} onClick={() => onPickRoom(r.id)}>
+              {roomLabel(r) || shortKey(r.roomKey)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {err && (
+        <div className="note">
+          <b>오류</b> — {err}
+        </div>
+      )}
+
+      {rooms.length === 0 ? (
+        <div className="empty">
+          <b>따라가는 방이 없다</b>
+          방 찾기 탭에서 방을 팔로우하면 그 방의 자료실이 생긴다.
+        </div>
+      ) : (
+        <>
+          <div
+            className={`drop${drag ? ' on' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDrag(false);
+              void upload(e.dataTransfer.files);
+            }}
+            onClick={() => picker.current?.click()}
+          >
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                void upload(e.target.files);
+                e.target.value = '';
+              }}
+            />
+            {progress ? (
+              <b>{progress}</b>
+            ) : (
+              <>
+                <b>여기에 파일을 끌어다 놓거나 눌러서 고르세요</b>
+                <span>PDF · Word · 한글 · 이미지 — 한 개 50MB 까지</span>
+              </>
+            )}
+          </div>
+
+          {files.length === 0 ? (
+            <div className="empty">
+              <b>아직 넣어둔 자료가 없다</b>
+              카톡방에서 받은 문서를 여기에 모아두면 대화와 같은 자리에서 찾을 수 있다.
+            </div>
+          ) : (
+            <ul className="files">
+              {files.map((f) => (
+                <li key={f.id}>
+                  <span className="kind" data-k={fileKind(f)}>{fileKind(f)}</span>
+                  <div className="fmeta">
+                    <span className="fname">{f.name}</span>
+                    <span className="fsub">
+                      {humanSize(f.sizeBytes)} · {dayLabel(f.createdAt)} {clockTime(f.createdAt)}
+                      {f.note ? ` · ${f.note}` : ''}
+                    </span>
+                  </div>
+                  <button
+                    className="btn ghost"
+                    onClick={async () => {
+                      const r = await act({ action: 'download', id: f.id });
+                      if (r?.url) window.open(r.url, '_blank', 'noopener');
+                    }}
+                  >
+                    받기
+                  </button>
+                  <button
+                    className="btn ghost"
+                    onClick={async () => {
+                      const note = window.prompt('메모 (비우면 지운다)', f.note ?? '');
+                      if (note === null) return;
+                      await act({ action: 'note', id: f.id, note });
+                      await reload(roomId);
+                    }}
+                  >
+                    메모
+                  </button>
+                  <button
+                    className="btn ghost"
+                    onClick={async () => {
+                      if (!window.confirm(`"${f.name}" 을 지울까? 되돌릴 수 없다.`)) return;
+                      await act({ action: 'delete', id: f.id });
+                      await reload(roomId);
+                    }}
+                  >
+                    지우기
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
