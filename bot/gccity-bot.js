@@ -38,9 +38,9 @@
  */
 
 // ── 설정 (이 3줄만 채우면 된다) ────────────────────────────────
-var CONFIG_ENDPOINT = 'https://<배포도메인>/api/bot/config';
-var INGEST_ENDPOINT = 'https://<배포도메인>/api/bot/ingest';
-var TOKEN = '<GCCITY_INGEST_TOKEN>';   // 서버 env GCCITY_INGEST_TOKEN 과 같은 값
+var CONFIG_ENDPOINT = 'https://gccity.vercel.app/api/bot/config';
+var INGEST_ENDPOINT = 'https://gccity.vercel.app/api/bot/ingest';
+var TOKEN = '35879874352e279349044e92f29a1a1b2efba2f7125d6db67db3e3a96d8c65a9';   // 서버 env GCCITY_INGEST_TOKEN 과 같은 값
 
 // ── 동작 옵션 ─────────────────────────────────────────────────
 
@@ -500,10 +500,41 @@ function onNotificationPosted(sbn) {   // 구 API 전역 훅
 // 하는 일 둘: 밀린 큐 비우기, 설정 다시 받기.
 // 설정 요청이 곧 심장박동이라 방이 조용해도 대시보드가 "봇 살아 있음" 을 안다.
 
+/**
+ * ★ 재컴파일이 남긴 좀비 루프를 죽인다.
+ *
+ * 메신저봇R 은 스크립트를 다시 컴파일해도 **이전에 띄운 데몬 스레드를 죽이지 않는다.**
+ * 옛 스레드는 옛 스크립트의 변수를 그대로 붙들고 있어서, 주소를 채우기 전 버전이라면
+ * 플레이스홀더 URL 로 60초마다 계속 실패하고(실측: `https://xn--<>-…` = `<배포도메인>`
+ * 이 IDN punycode 로 변환된 것), 주소가 멀쩡하다면 **컴파일 횟수만큼 서버를 두드린다.**
+ * 후자가 더 위험하다 — 조용히 요금만 곱해진다. speciai-kakao-bot 이 폴링 과다로
+ * Vercel 402 를 맞아 멈춘 적이 있다.
+ *
+ * 그래서 세대 번호를 **JVM 시스템 속성**에 둔다. 스크립트 변수로는 안 된다 —
+ * 옛 스레드는 옛 변수를 보기 때문에 새 스크립트가 무슨 값을 넣든 보이지 않는다.
+ * 시스템 속성은 프로세스 전역이라 옛 스레드에도 그대로 읽힌다.
+ */
+var GEN_KEY = 'gccity.loop.generation';
+var MY_GEN = String(nowMs());
+
+function loopSuperseded() {
+  try {
+    return String(java.lang.System.getProperty(GEN_KEY)) !== MY_GEN;
+  } catch (e) {
+    return false;   // 속성을 못 읽으면 살아 있는 쪽으로 둔다 — 멀쩡한 루프를 죽이지 않는다
+  }
+}
+
 function startLoop() {
+  try { java.lang.System.setProperty(GEN_KEY, MY_GEN); } catch (eP) {}
+
   var t = new java.lang.Thread(new java.lang.Runnable({
     run: function () {
       while (true) {
+        if (loopSuperseded()) {
+          Log.i('gccity: 새 컴파일 감지 — 옛 루프 종료 (gen ' + MY_GEN + ')');
+          return;
+        }
         try {
           if (queueDue()) flush();
           if ((nowMs() - _lastConfigAt) >= CONFIG_POLL_MS) refreshConfig();
@@ -522,7 +553,7 @@ function startLoop() {
 
 // 폰에 실제로 올라간 코드가 어느 것인지 첫 줄로 못 박는다.
 // 붙여넣기가 안 먹었는데 먹은 줄 알고 원인을 엉뚱한 데서 찾은 적이 있다.
-Log.i('gccity: 시작 v2026-08-18a — 읽기 전용. 카톡에 아무것도 쓰지 않는다.');
+Log.i('gccity: 시작 v2026-08-19a — 읽기 전용. 카톡에 아무것도 쓰지 않는다.');
 
 refreshConfig();
 startLoop();
