@@ -6,3 +6,9 @@ node_modules/
 *.local.sql
 next-env.d.ts
 tsconfig.tsbuildinfo
+.vercel
+.env*
+
+# supabase CLI 가 만드는 링크 캐시. project-ref·pooler URL 이 들어간다 —
+# 구 레포가 이걸 커밋해서 공개 노출시켰다. 절대 추적하지 말 것.
+supabase/.temp/
