@@ -71,7 +71,17 @@ var QUEUE_MAX = 500;
 var HTTP_TIMEOUT_MS = 10000;
 
 /** 알림에 실린 메시지 시각이 이보다 오래됐으면 재게시로 본다. */
-var STALE_MS = 180000;
+/**
+ * 이 시각보다 오래된 메시지는 버린다.
+ *
+ * 3분이었다가 1시간으로 늘렸다(2026-08-19). 카톡 알림의 android.messages 배열에는
+ * 최근 8~9건이 한꺼번에 실려 오는데, 3분이면 그중 과거 것이 전부 잘려나갔다.
+ * 봇이 잠깐 죽었다 살아나면 그 배열이 **유일한 복구 경로**다 — 잘라버릴 이유가 없다.
+ *
+ * 같은 알림이 여러 번 올라와도 CLAIM_TTL_MS 가 같은 값이라 다시 보내지 않고,
+ * 그마저 뚫려도 서버의 (room_id, msg_id) 유니크가 막는다. 방어가 두 겹이다.
+ */
+var STALE_MS = 3600000;
 
 var DEBUG = true;
 
@@ -88,8 +98,33 @@ var _qSeen = [];
 var _qSince = 0;
 
 var _claims = {};
+var _claimCount = 0;
 var _claimSweptAt = 0;
-var CLAIM_TTL_MS = 30000;
+
+/**
+ * 이미 처리한 메시지를 기억하는 기간. STALE_MS 와 같은 값이어야 한다.
+ * 짧으면 알림이 다시 올라올 때마다 같은 배열을 또 보낸다(서버는 멱등이라 저장은
+ * 안 되지만 폰 배터리와 호출 수를 태운다). 길면 이 표가 커지므로 개수 상한을 같이 둔다.
+ */
+var CLAIM_TTL_MS = 3600000;
+var CLAIM_MAX = 4000;
+
+/**
+ * ★ 방 찾기 중 후보 방의 본문을 담아두는 곳. **폰을 벗어나지 않는다.**
+ *
+ * 후보 단계에서 서버로 올라가는 것은 여전히 앞 12자뿐이다. 본문은 여기 메모리에만 있다가
+ * 사람이 그 방을 팔로우하는 순간에만 올라간다. 팔로우하지 않은 방의 본문은 전송 구간을
+ * 아예 지나가지 않는다는 원칙(CLAUDE.md 2)이 그대로 지켜진다.
+ *
+ * 이게 없으면 "방 찾기 켜기 → 방 알아보기 → 팔로우" 사이에 오간 대화가 통째로 날아간다.
+ * 오픈채팅은 그 몇 분 사이에도 수십 건이 지나간다.
+ *
+ * 방 찾기가 꺼지면 즉시 버린다 — 개인 카톡 본문을 폰에 계속 들고 있지 않는다.
+ */
+var _buf = {};
+var _bufRooms = 0;
+var BUF_PER_ROOM = 80;
+var BUF_ROOMS_MAX = 40;
 
 var _sentTotal = 0;
 var _seenTotal = 0;
@@ -182,8 +217,18 @@ function refreshConfig() {
       if (k) next[k] = true;
     }
     var changed = (_configVersion !== obj.version) || (_discovery !== !!obj.discovery);
+
+    // ★ 새로 팔로우된 방이 있으면, 방 찾기 중 폰에 담아둔 본문을 그때 올린다.
+    //   _follow 를 갈아끼우기 **전에** 비교해야 '새로' 를 알 수 있다.
+    var released = 0;
+    for (var fk in next) {
+      if (next.hasOwnProperty(fk) && !_follow[fk]) released += releaseBuffer(fk);
+    }
+
     _follow = next;
     _discovery = !!obj.discovery;
+    if (!_discovery) clearBuffer();   // 방 찾기가 꺼지면 남은 후보 본문은 버린다
+    if (released > 0) flushAsync();
     _configVersion = obj.version;
     _configEverLoaded = true;
     if (changed || DEBUG) {
@@ -332,18 +377,56 @@ function trim(v) {
  */
 function claim(key, m) {
   var now = nowMs();
-  if (now - _claimSweptAt > CLAIM_TTL_MS) {
+  // TTL 이 길어졌으므로(1시간) 시간뿐 아니라 개수로도 쓸어낸다. 활발한 방은 금세 쌓인다.
+  if ((now - _claimSweptAt > CLAIM_TTL_MS) || _claimCount > CLAIM_MAX) {
     _claimSweptAt = now;
     var fresh = {};
+    var n = 0;
     for (var k in _claims) {
-      if (_claims.hasOwnProperty(k) && (now - _claims[k]) < CLAIM_TTL_MS) fresh[k] = _claims[k];
+      if (_claims.hasOwnProperty(k) && (now - _claims[k]) < CLAIM_TTL_MS) { fresh[k] = _claims[k]; n++; }
     }
     _claims = fresh;
+    _claimCount = n;
   }
   var id = key + '|' + m.tsMs + '|' + m.sender + '|' + trim(m.text).slice(0, 60);
   if (_claims[id] && (now - _claims[id]) < CLAIM_TTL_MS) return false;
   _claims[id] = now;
+  _claimCount++;
   return true;
+}
+
+// ── 팔로우 직전 대화 버퍼 ─────────────────────────────────────
+
+/** 방 찾기 중 후보 방의 본문을 폰 안에만 담아둔다. 전송하지 않는다. */
+function bufferForFollow(item) {
+  if (!_buf.hasOwnProperty(item.key)) {
+    if (_bufRooms >= BUF_ROOMS_MAX) return;   // 개인 카톡이 많은 폰에서 무한정 늘지 않게
+    _buf[item.key] = [];
+    _bufRooms++;
+  }
+  var arr = _buf[item.key];
+  arr.push(item);
+  while (arr.length > BUF_PER_ROOM) arr.shift();
+}
+
+/** 사람이 그 방을 팔로우한 순간 — 담아둔 본문을 이제 올린다. */
+function releaseBuffer(key) {
+  var arr = _buf[key];
+  if (!arr || arr.length === 0) return 0;
+  for (var i = 0; i < arr.length; i++) enqueue(_qMsgs, arr[i]);
+  var n = arr.length;
+  delete _buf[key];
+  _bufRooms--;
+  Log.i('gccity: 팔로우 직전 대화 ' + n + '건을 올린다 (key=' + key + ')');
+  return n;
+}
+
+/** 방 찾기가 끝나면 남은 것은 버린다. 개인 카톡 본문을 폰에 들고 있지 않는다. */
+function clearBuffer() {
+  if (_bufRooms === 0) return;
+  Log.i('gccity: 방 찾기 종료 — 담아둔 후보 본문 ' + _bufRooms + '개 방분을 버린다');
+  _buf = {};
+  _bufRooms = 0;
 }
 
 // ── 큐 ────────────────────────────────────────────────────────
@@ -456,6 +539,11 @@ function onKakaoNoti(sbn) {
         enqueue(_qSeen, {
           key: key, nameHint: hint, group: isGroup,
           sender: m.sender, preview: trim(m.text).slice(0, PREVIEW_CHARS), tsMs: m.tsMs
+        });
+        // 본문은 폰 안에만 둔다. 이 방을 팔로우하면 그때 함께 올라간다(bufferForFollow 주석).
+        bufferForFollow({
+          key: key, nameHint: hint, group: isGroup,
+          sender: m.sender, text: m.text, tsMs: m.tsMs
         });
       }
       queued++;
