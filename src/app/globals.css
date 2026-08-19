@@ -193,7 +193,7 @@ input { font: inherit; }
 }
 .avatar.blank { background: none; }
 
-.kbody { min-width: 0; }
+.kbody { min-width: 0; max-width: min(560px, 100%); }
 .kname { font-size: 12px; color: #37424d; margin: 0 0 4px 2px; }
 @media (prefers-color-scheme: dark) { .kname { color: var(--ink-2); } }
 
@@ -203,8 +203,17 @@ input { font: inherit; }
   background: var(--bubble); color: var(--ink);
   padding: 7px 11px; border-radius: 4px 14px 14px 14px;
   font-size: 14px; line-height: 1.45;
-  white-space: pre-wrap; word-break: break-word;
-  max-width: min(560px, 78%);
+  white-space: pre-wrap;
+  /*
+   * ★ word-break: break-word 를 쓰지 말 것.
+   *   그 값은 말풍선의 최소 폭을 한 글자로 만든다. flex 행 안에서는 말풍선이 그
+   *   한 글자까지 쪼그라들어 "안녕?" 이 세로로 쪼개진다(실측 2026-08-19).
+   *   overflow-wrap: break-word 는 최소 폭을 건드리지 않으면서, 칸을 넘는 긴 낱말만
+   *   끊는다 — 붙여넣은 URL 이 말풍선을 뚫고 나가는 것도 이쪽이 막아준다.
+   */
+  overflow-wrap: break-word;
+  width: fit-content;
+  max-width: 100%;
   box-shadow: 0 1px 1px rgba(0, 0, 0, .06);
 }
 .kmsg:not(.headed) .bubble { border-radius: 14px; }
