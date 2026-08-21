@@ -2,15 +2,25 @@ import { NextResponse } from 'next/server';
 import {
   addDrafts,
   addManual,
+  attachBody,
   clipMessage,
   countByStatus,
+  deleteAuthor,
   deleteComplaint,
   editComplaint,
+  getFlowStats,
+  linkResolution,
+  listAuthors,
   listComplaints,
   parsePastedList,
+  reclassifyAll,
+  setAuthorKind,
+  setKind,
   setStatus,
+  unlinkResolution,
   type ComplaintStatus,
 } from '@/server/complaints';
+import type { AuthorKind, PostKind } from '@/server/complaint-classify';
 import { addSource, countDue, deleteSource, editSource, listSources, runSources } from '@/server/complaint-crawl';
 
 export const dynamic = 'force-dynamic';
@@ -26,9 +36,13 @@ export async function GET(req: Request) {
       ok: true,
       complaints: await listComplaints({
         status: url.searchParams.get('status') ?? 'all',
+        kind: url.searchParams.get('kind') ?? 'all',
         q: url.searchParams.get('q') ?? '',
       }),
       counts: await countByStatus(),
+      // 흐름 요약 — 접수/처리 건수와 평균 처리일. 모수를 함께 내보낸다
+      flow: await getFlowStats(),
+      authors: await listAuthors(),
       sources,
       // 자동 크롤이 밀렸다는 것을 화면에 드러낸다. 몰래 긁지 않고 사람에게 알린다
       due: countDue(sources),
@@ -77,6 +91,15 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true });
       }
 
+      /**
+       * 글 본문 붙이기. 카페는 서버가 못 읽으니 사람이 열어 복사해 넣는다.
+       * 붙는 즉시 접수·회신 시각·담당 부서·완료 예정일을 정규식으로 뽑는다.
+       */
+      case 'body': {
+        const out = await attachBody(String(body.id ?? ''), String(body.body ?? ''));
+        return NextResponse.json({ ok: true, ...out });
+      }
+
       case 'status': {
         await setStatus(String(body.id ?? ''), String(body.status ?? '') as ComplaintStatus);
         return NextResponse.json({ ok: true });
@@ -94,6 +117,40 @@ export async function POST(req: Request) {
 
       case 'delete': {
         await deleteComplaint(String(body.id ?? ''));
+        return NextResponse.json({ ok: true });
+      }
+
+      /** 작성자 성격을 정한다. 정한 뒤 reclassify 를 부르면 지난 글에도 적용된다. */
+      case 'author-kind': {
+        await setAuthorKind(String(body.name ?? ''), String(body.kind ?? '') as AuthorKind, body.note ? String(body.note) : undefined);
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'author-delete': {
+        await deleteAuthor(String(body.name ?? ''));
+        return NextResponse.json({ ok: true });
+      }
+
+      /** 명부가 바뀐 뒤 지난 글 다시 가르기. 사람이 손으로 고친 행은 건드리지 않는다. */
+      case 'reclassify': {
+        const out = await reclassifyAll();
+        return NextResponse.json({ ok: true, ...out });
+      }
+
+      /** 종류를 손으로 고친다(민원·처리·공지). 고치면 잠겨서 재분류가 덮지 않는다. */
+      case 'kind': {
+        await setKind(String(body.id ?? ''), String(body.kind ?? '') as PostKind);
+        return NextResponse.json({ ok: true });
+      }
+
+      /** 처리 글 ↔ 민원 글 잇기. 자동으로 엮지 않는다 — 틀린 짝은 통계를 조용히 망친다. */
+      case 'link': {
+        await linkResolution(String(body.resolutionId ?? ''), String(body.reportId ?? ''));
+        return NextResponse.json({ ok: true });
+      }
+
+      case 'unlink': {
+        await unlinkResolution(String(body.id ?? ''));
         return NextResponse.json({ ok: true });
       }
 

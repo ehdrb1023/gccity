@@ -975,6 +975,32 @@ type Complaint = {
   status: CivicStatus;
   note: string | null;
   createdAt: string;
+  /* 흐름 — 민원이 언제 들어와 며칠 만에 처리됐는가 */
+  kind: PostKind;
+  kindLocked: boolean;
+  reportedAt: string | null;
+  resolvedAt: string | null;
+  resolutionOf: string | null;
+  summary: string | null;
+  department: string | null;
+  dueAt: string | null;
+};
+
+type PostKind = 'report' | 'resolution' | 'notice' | 'unknown';
+type AuthorKind = 'official' | 'resident' | 'ignore';
+
+type CivicAuthor = { name: string; kind: AuthorKind; note: string | null; count?: number };
+
+type Flow = {
+  reports: number;
+  resolutions: number;
+  notices: number;
+  unknown: number;
+  measured: number;
+  avgLeadDays: number | null;
+  medianLeadDays: number | null;
+  maxLeadDays: number | null;
+  sameDay: number;
 };
 
 type CrawlSource = {
@@ -1002,6 +1028,38 @@ const CIVIC_STATUS: { key: CivicStatus; label: string }[] = [
   { key: 'done', label: '처리 완료' },
   { key: 'drop', label: '제외' },
 ];
+/** 서버(`complaint-classify.ts`)의 KIND_LABEL 과 같은 값이다. 한쪽만 고치지 말 것. */
+const KIND: { key: PostKind; label: string }[] = [
+  { key: 'report', label: '민원' },
+  { key: 'resolution', label: '처리' },
+  { key: 'notice', label: '공지' },
+  { key: 'unknown', label: '미분류' },
+];
+const KIND_LABEL: Record<PostKind, string> = {
+  report: '민원',
+  resolution: '처리',
+  notice: '공지',
+  unknown: '미분류',
+};
+const AUTHOR_KIND: { key: AuthorKind; label: string }[] = [
+  { key: 'resident', label: '주민' },
+  { key: 'official', label: '기관' },
+  { key: 'ignore', label: '숨김' },
+];
+
+/** "8/7 → 8/11 · 4일" — 접수에서 회신까지. 없으면 빈 문자열이다. */
+function leadLabel(reportedAt: string | null, resolvedAt: string | null): string {
+  if (!reportedAt) return '';
+  const md = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+  if (!resolvedAt) return `접수 ${md(reportedAt)}`;
+  const days = Math.floor((Date.parse(resolvedAt) - Date.parse(reportedAt)) / 86_400_000);
+  if (days < 0) return `접수 ${md(reportedAt)} · ⚠️ 회신이 더 이르다`;
+  return `접수 ${md(reportedAt)} → 회신 ${md(resolvedAt)} · ${days === 0 ? '당일' : days + '일'}`;
+}
+
 const ORIGIN_LABEL: Record<Complaint['origin'], string> = {
   crawl: '크롤',
   paste: '붙여넣기',
@@ -1022,19 +1080,27 @@ function Complaints() {
   const [items, setItems] = useState<Complaint[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [sources, setSources] = useState<CrawlSource[]>([]);
+  const [authors, setAuthors] = useState<CivicAuthor[]>([]);
+  const [flow, setFlow] = useState<Flow | null>(null);
   const [due, setDue] = useState(0);
   const [status, setStatus] = useState<'all' | CivicStatus>('all');
+  const [kind, setKind] = useState<'all' | PostKind>('all');
+  /** 잇기 중인 처리 글. 골라두면 민원 줄에 [여기에 잇기] 가 뜬다 */
+  const [linking, setLinking] = useState<Complaint | null>(null);
+  /** 본문을 붙이는 중인 민원. 카페는 서버가 못 읽으니 사람이 열어 복사해 넣는다 */
+  const [bodyFor, setBodyFor] = useState<Complaint | null>(null);
+  const [bodyText, setBodyText] = useState('');
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [panel, setPanel] = useState<'none' | 'paste' | 'sources'>('none');
+  const [panel, setPanel] = useState<'none' | 'paste' | 'sources' | 'authors'>('none');
   const [paste, setPaste] = useState('');
   const [board, setBoard] = useState('');
 
-  const reload = useCallback(async (st: string, query: string) => {
+  const reload = useCallback(async (st: string, query: string, kd: string = 'all') => {
     try {
-      const qs = new URLSearchParams({ status: st, q: query });
+      const qs = new URLSearchParams({ status: st, q: query, kind: kd });
       const res = await fetch(`/api/complaints?${qs}`, { cache: 'no-store' });
       const json = await res.json();
       if (!json.ok) {
@@ -1045,6 +1111,8 @@ function Complaints() {
       setItems(json.complaints);
       setCounts(json.counts);
       setSources(json.sources);
+      setAuthors(json.authors ?? []);
+      setFlow(json.flow ?? null);
       setDue(json.due);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -1052,8 +1120,8 @@ function Complaints() {
   }, []);
 
   useEffect(() => {
-    void reload(status, q);
-  }, [reload, status, q]);
+    void reload(status, q, kind);
+  }, [reload, status, q, kind]);
 
   const act = useCallback(
     async (body: Record<string, unknown>): Promise<Record<string, any> | null> => {
@@ -1084,9 +1152,9 @@ function Complaints() {
   const after = useCallback(
     async (json: Record<string, any> | null, note?: string) => {
       if (json && note) setMsg(note);
-      await reload(status, q);
+      await reload(status, q, kind);
     },
-    [reload, status, q],
+    [reload, status, q, kind],
   );
 
   /** ★ 결과를 그대로 적는다 — 몇 곳을 긁어 몇 건이 새것인지, 실패면 사유까지. */
@@ -1107,7 +1175,7 @@ function Complaints() {
           .join(' · '),
       );
     }
-    await reload(status, q);
+    await reload(status, q, kind);
   };
 
   const submitPaste = async () => {
@@ -1115,18 +1183,19 @@ function Complaints() {
     if (!json) return;
     setPaste('');
     setMsg(`${json.parsed}줄에서 ${json.added}건 담았다 (이미 있던 것 ${json.skipped}건)`);
-    await reload(status, q);
+    await reload(status, q, kind);
   };
 
   return (
     <section className="panel">
       <header>
         <h2>민원실</h2>
-        <span className="count">
-          전체 {counts.all ?? 0}건 · 새 민원 {counts.new ?? 0}건 · 방과 무관한 하나의 목록이다
-        </span>
+        <span className="count">전체 {counts.all ?? 0}건 · 방과 무관한 하나의 목록이다</span>
         <div className="spacer" />
         <div className="hdr-actions">
+          <button className="btn ghost" onClick={() => setPanel(panel === 'authors' ? 'none' : 'authors')}>
+            작성자
+          </button>
           <button className="btn ghost" onClick={() => setPanel(panel === 'paste' ? 'none' : 'paste')}>
             붙여넣기
           </button>
@@ -1150,6 +1219,99 @@ function Complaints() {
           <button className="btn ghost" onClick={() => setMsg(null)}>
             닫기
           </button>
+        </div>
+      )}
+
+      {/*
+        흐름 요약. ★ 모수(measured)를 반드시 함께 적는다 — "평균 3일" 이 두 건에서 나온
+        값인지 백 건에서 나온 값인지 모르면 그 숫자는 판단 근거가 못 된다.
+      */}
+      {flow && (
+        <div className="flowbar">
+          <div>
+            <b>{flow.reports}</b>
+            <span>민원</span>
+          </div>
+          <div>
+            <b>{flow.resolutions}</b>
+            <span>처리</span>
+          </div>
+          <div>
+            <b>{flow.avgLeadDays == null ? '—' : `${flow.avgLeadDays}일`}</b>
+            <span>평균 처리 ({flow.measured}건 기준)</span>
+          </div>
+          <div>
+            <b>{flow.medianLeadDays == null ? '—' : `${flow.medianLeadDays}일`}</b>
+            <span>중앙값</span>
+          </div>
+          <div>
+            <b>{flow.maxLeadDays == null ? '—' : `${flow.maxLeadDays}일`}</b>
+            <span>최장</span>
+          </div>
+          <div>
+            <b>{flow.sameDay}</b>
+            <span>당일 처리</span>
+          </div>
+          {flow.unknown > 0 && (
+            <div className="warn">
+              <b>{flow.unknown}</b>
+              <span>미분류 — [작성자] 에서 정할 것</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {linking && (
+        <div className="note">
+          <b>잇는 중:</b> {linking.title.slice(0, 40)} — 아래 민원 줄의 <b>[여기에 잇기]</b> 를 누르면 짝이 된다.{' '}
+          <button className="btn ghost" onClick={() => setLinking(null)}>
+            그만두기
+          </button>
+        </div>
+      )}
+
+      {bodyFor && (
+        <div className="civic-panel">
+          <p>
+            <b>{bodyFor.title.slice(0, 50)}</b> 의 본문을 붙여넣으면 접수·회신 시각(분 단위) · 담당 부서 ·
+            <code>…까지</code> 약속을 그 자리에서 뽑는다. <b>카페 글을 열어 Ctrl+A → Ctrl+C</b> 하면 된다.
+          </p>
+          <textarea
+            value={bodyText}
+            rows={8}
+            placeholder="글 본문을 통째로 붙여넣기"
+            onChange={(e) => setBodyText(e.target.value)}
+          />
+          <div className="civic-row">
+            <button
+              className="btn primary"
+              disabled={busy || !bodyText.trim()}
+              onClick={async () => {
+                const json = await act({ action: 'body', id: bodyFor.id, body: bodyText });
+                if (json) {
+                  const p = json.parsed ?? {};
+                  setMsg(
+                    [
+                      p.receivedAt ? `접수 ${new Date(p.receivedAt).toLocaleString('ko-KR')}` : '접수 시각 못 찾음',
+                      p.repliedAt ? `회신 ${new Date(p.repliedAt).toLocaleString('ko-KR')}` : '회신 시각 못 찾음',
+                      p.department ? `부서 ${p.department}` : null,
+                      p.dueAt ? `⚠️ ${new Date(p.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정 — 아직 안 끝났다` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · '),
+                  );
+                  setBodyFor(null);
+                  setBodyText('');
+                  await reload(status, q, kind);
+                }
+              }}
+            >
+              본문 저장
+            </button>
+            <button className="btn ghost" onClick={() => { setBodyFor(null); setBodyText(''); }}>
+              그만두기
+            </button>
+          </div>
         </div>
       )}
 
@@ -1198,7 +1360,37 @@ function Complaints() {
         </div>
       )}
 
-      {panel === 'sources' && <Sources sources={sources} busy={busy} act={act} reload={() => reload(status, q)} onCrawl={crawl} />}
+      {panel === 'authors' && (
+        <Authors
+          authors={authors}
+          busy={busy}
+          act={act}
+          reload={() => reload(status, q, kind)}
+          onMsg={setMsg}
+        />
+      )}
+
+      {panel === 'sources' && <Sources sources={sources} busy={busy} act={act} reload={() => reload(status, q, kind)} onCrawl={crawl} />}
+
+      <div className="chips">
+        <button data-on={kind === 'all'} onClick={() => setKind('all')}>
+          전체
+        </button>
+        {KIND.map((k) => (
+          <button key={k.key} data-on={kind === k.key} onClick={() => setKind(k.key)}>
+            {k.label}{' '}
+            {flow
+              ? k.key === 'report'
+                ? flow.reports
+                : k.key === 'resolution'
+                  ? flow.resolutions
+                  : k.key === 'notice'
+                    ? flow.notices
+                    : flow.unknown
+              : ''}
+          </button>
+        ))}
+      </div>
 
       <div className="chips">
         <button data-on={status === 'all'} onClick={() => setStatus('all')}>
@@ -1226,7 +1418,24 @@ function Complaints() {
       ) : (
         <ul className="civics">
           {items.map((c) => (
-            <li key={c.id}>
+            <li key={c.id} data-kind={c.kind}>
+              {/* 종류를 손으로 고치면 잠긴다 — 이후 재분류가 그 행을 덮지 않는다 */}
+              <select
+                className={`ckind k-${c.kind}`}
+                value={c.kind}
+                disabled={busy}
+                title={c.kindLocked ? '손으로 정한 종류 (재분류가 덮지 않는다)' : '규칙이 정한 종류'}
+                onChange={async (e) => {
+                  await after(await act({ action: 'kind', id: c.id, kind: e.target.value }));
+                }}
+              >
+                {KIND.map((k) => (
+                  <option key={k.key} value={k.key}>
+                    {k.label}
+                  </option>
+                ))}
+              </select>
+
               <select
                 className={`cstat s-${c.status}`}
                 value={c.status}
@@ -1259,10 +1468,68 @@ function Complaints() {
                   {c.postedAt ? '' : ' (담은 날)'}
                   {c.category && ` · #${c.category}`}
                 </span>
+                {/* 접수 → 회신. 처리 글은 제목 날짜가 접수일이라 짝짓기 없이도 잡힌다 */}
+                {leadLabel(c.reportedAt, c.resolvedAt) && (
+                  <span className="clead">
+                    {leadLabel(c.reportedAt, c.resolvedAt)}
+                    {c.department && ` · ${c.department}`}
+                    {/* ★ 회신이 왔어도 "…까지" 약속이 남아 있으면 끝난 게 아니다 */}
+                    {c.dueAt && ` · ⏳ ${new Date(c.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정`}
+                  </span>
+                )}
                 {c.body && <span className="cbody">{c.body.slice(0, 200)}</span>}
                 {c.note && <span className="cnote">✎ {c.note}</span>}
               </div>
 
+              {/* 짝짓기는 사람이 한다. 제목이 비슷하다고 자동으로 엮으면 통계가 조용히 틀린다 */}
+              {c.kind === 'resolution' &&
+                (c.resolutionOf ? (
+                  <button
+                    className="btn ghost"
+                    disabled={busy}
+                    onClick={async () => {
+                      await after(await act({ action: 'unlink', id: c.id }));
+                    }}
+                  >
+                    잇기 해제
+                  </button>
+                ) : (
+                  <button
+                    className="btn ghost"
+                    disabled={busy}
+                    onClick={() => setLinking(linking?.id === c.id ? null : c)}
+                  >
+                    {linking?.id === c.id ? '고르는 중' : '민원에 잇기'}
+                  </button>
+                ))}
+
+              {linking && c.kind === 'report' && c.id !== linking.id && (
+                <button
+                  className="btn primary"
+                  disabled={busy}
+                  onClick={async () => {
+                    await after(
+                      await act({ action: 'link', resolutionId: linking.id, reportId: c.id }),
+                      '민원과 처리를 이었다',
+                    );
+                    setLinking(null);
+                  }}
+                >
+                  여기에 잇기
+                </button>
+              )}
+
+              <button
+                className="btn ghost"
+                disabled={busy}
+                title="글 본문을 붙여넣어 시각·부서·예정일을 뽑는다"
+                onClick={() => {
+                  setBodyFor(c);
+                  setBodyText(c.body ?? '');
+                }}
+              >
+                본문{c.body ? ' ✓' : ''}
+              </button>
               <button
                 className="btn ghost"
                 disabled={busy}
@@ -1300,6 +1567,81 @@ function Complaints() {
         </ul>
       )}
     </section>
+  );
+}
+
+/**
+ * 작성자 명부 — 민원과 공지를 가르는 첫 번째 축.
+ *
+ * ★ 작성자만으로는 안 갈린다. `조인길 정책관` 한 계정이 민원 처리 기록과 보도자료를
+ *   함께 쓴다(실측 2026-08-21). 명부는 "기본값" 을 주고, 제목이 `날짜 + …민원` 꼴이면
+ *   기관 계정 글이라도 처리 기록으로 살린다(`complaint-classify.ts`).
+ *
+ * 정하고 나면 [지난 글 다시 가르기] 를 눌러야 이미 담긴 글에 적용된다 —
+ * 저절로 돌지 않는다. 손으로 고쳐둔 행은 그때도 건드리지 않는다.
+ */
+function Authors({
+  authors,
+  busy,
+  act,
+  reload,
+  onMsg,
+}: {
+  authors: CivicAuthor[];
+  busy: boolean;
+  act: (body: Record<string, unknown>) => Promise<Record<string, any> | null>;
+  reload: () => Promise<void>;
+  onMsg: (m: string) => void;
+}) {
+  return (
+    <div className="civic-panel">
+      <p>
+        <b>기관·홍보 계정을 한 번 찍어두면 그 뒤 올라오는 홍보글이 자동으로 공지로 내려간다.</b>{' '}
+        단, 제목이 <code>2026년 8월 20일(목) … 민원</code> 꼴이면 기관 계정 글이라도 <b>처리 기록</b>으로
+        살린다 — 정책관 계정 하나가 민원 회신과 보도자료를 함께 쓰기 때문이다.
+      </p>
+      <div className="civic-row">
+        <button
+          className="btn"
+          disabled={busy}
+          onClick={async () => {
+            const out = await act({ action: 'reclassify' });
+            if (out) onMsg(`${out.scanned}건 중 ${out.changed}건 다시 갈랐다 (손으로 고친 행은 그대로)`);
+            await reload();
+          }}
+        >
+          지난 글 다시 가르기
+        </button>
+      </div>
+
+      {authors.length === 0 ? (
+        <p className="dim">아직 작성자가 없다. 목록을 담으면 여기 이름이 모인다.</p>
+      ) : (
+        <ul className="srcs">
+          {authors.map((a) => (
+            <li key={a.name}>
+              <div className="cmeta">
+                <span className="ctitle">{a.name}</span>
+                <span className="csub">글 {a.count ?? 0}건{a.note ? ` · ${a.note}` : ''}</span>
+              </div>
+              {AUTHOR_KIND.map((k) => (
+                <button
+                  key={k.key}
+                  className={`btn ${a.kind === k.key ? 'primary' : 'ghost'}`}
+                  disabled={busy}
+                  onClick={async () => {
+                    await act({ action: 'author-kind', name: a.name, kind: k.key });
+                    await reload();
+                  }}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

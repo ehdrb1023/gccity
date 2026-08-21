@@ -49,8 +49,32 @@ describe('parsePastedList', () => {
     const out = parsePastedList('12345\t갈현삼거리 횡단보도 바꿔주세요.\t과천주민\t2026.08.20\t312', NOW);
     expect(out).toHaveLength(1);
     expect(out[0].title).toBe('갈현삼거리 횡단보도 바꿔주세요.');
-    expect(out[0].author).toBe('과천주민');
+    expect(out[0].author).toBe('과천주민');   // 번호 열이 앞에 있어도 날짜 앞 칸이 작성자다
     expect(out[0].postedAt).toBe(new Date(Date.parse('2026-08-20T00:00:00+09:00')).toISOString());
+  });
+
+  /**
+   * 실측 2026-08-21: 과천 카페 목록은 [카테고리 ⇥ 제목 ⇥ 작성자 ⇥ 작성일 ⇥ 조회수] 다.
+   * ★ 짧은 칸을 앞에서부터 집으면 카테고리("교통.공원(")를 작성자로 먹는다 —
+   *   작성자 명부가 분류의 첫 축이라, 그 상태면 분류가 통째로 어긋난다.
+   */
+  it('★ 작성자는 날짜 칸 바로 앞이다 — 카테고리를 작성자로 먹지 않는다', () => {
+    const out = parsePastedList(
+      [
+        '교통.공원(\t지정타 근린3공원은 언제 완공될까요? [5]\t애플망고\t08:36\t65',
+        '과천축제\t[2026 과천공연예술축제] 공식 홍보영상 공개\t과천문화재단문화사업\t2026.08.20.\t18',
+      ].join('\n'),
+      NOW,
+    );
+    expect(out.map((c) => c.author)).toEqual(['애플망고', '과천문화재단문화사업']);
+    expect(out.map((c) => c.category)).toEqual(['교통.공원', '과천축제']);
+    expect(out[0].title).toBe('지정타 근린3공원은 언제 완공될까요?');
+  });
+
+  it('날짜 열이 없으면 뒤쪽 짧은 칸을 작성자로 본다', () => {
+    const out = parsePastedList('경마공원 이전 계획, 노동자·경주마 모두 위협\t조인길 정책관', NOW);
+    expect(out[0].author).toBe('조인길 정책관');
+    expect(out[0].title).toBe('경마공원 이전 계획, 노동자·경주마 모두 위협');
   });
 
   it('줄에 주소가 섞여 있으면 링크로 뗀다', () => {
