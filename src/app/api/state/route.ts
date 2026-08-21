@@ -29,6 +29,8 @@ export async function GET(req: Request) {
         build: state.botBuild,
         api2: state.botApi2,
         msgCount: state.botMsgCount,
+        senderIdx: state.botSenderIdx,
+        senderAuth: state.botSenderAuth,
       },
       discovery: { on: discoveryOn(state), until: state.discoveryUntil },
       rooms,

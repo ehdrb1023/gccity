@@ -11,6 +11,10 @@ export type AppState = {
   botApi2: boolean | null;
   /** 봇이 켜진 뒤 받은 카톡 메시지 수. API2 는 켜졌는데 0 이면 이벤트가 안 오는 것이다 */
   botMsgCount: number | null;
+  /** 이름을 알림 색인에서 얻은 건수. 믿을 수 있는 쪽이다 */
+  botSenderIdx: number | null;
+  /** 이름을 API2 author.name 으로 때운 건수. 이쪽만 늘면 이름이 굳었을 수 있다 */
+  botSenderAuth: number | null;
 };
 
 /** 봇이 심장박동에 얹어 보내는 자기 상태. 전부 선택 값이다 — 옛 봇도 그냥 돌아야 한다. */
@@ -18,6 +22,8 @@ export type BotNote = {
   build?: string | null;
   api2?: boolean | null;
   msgCount?: number | null;
+  senderIdx?: number | null;
+  senderAuth?: number | null;
 };
 
 const ROW = { id: 1 };
@@ -25,7 +31,8 @@ const ROW = { id: 1 };
 export async function getAppState(): Promise<AppState> {
   const { data, error } = await db()
     .from('app_state')
-    .select('discovery_until, config_version, bot_last_seen_at, bot_last_gap_ms, bot_build, bot_api2, bot_msg_count')
+    // ★ 한 줄 리터럴로 둘 것 — 문자열을 이어붙이면 supabase-js 가 컬럼 타입을 못 읽는다
+    .select('discovery_until, config_version, bot_last_seen_at, bot_last_gap_ms, bot_build, bot_api2, bot_msg_count, bot_sender_idx, bot_sender_auth')
     .eq('id', 1)
     .maybeSingle();
   // supabase-js 는 쿼리 실패를 throw 하지 않는다. 조용히 기본값으로 넘어가면
@@ -40,6 +47,8 @@ export async function getAppState(): Promise<AppState> {
     botBuild: data.bot_build ?? null,
     botApi2: data.bot_api2 ?? null,
     botMsgCount: data.bot_msg_count ?? null,
+    botSenderIdx: data.bot_sender_idx ?? null,
+    botSenderAuth: data.bot_sender_auth ?? null,
   };
 }
 
@@ -72,6 +81,8 @@ export async function touchHeartbeat(note?: BotNote): Promise<void> {
   if (note?.build != null) patch.bot_build = String(note.build).slice(0, 40);
   if (note?.api2 != null) patch.bot_api2 = note.api2;
   if (note?.msgCount != null && Number.isFinite(note.msgCount)) patch.bot_msg_count = note.msgCount;
+  if (note?.senderIdx != null && Number.isFinite(note.senderIdx)) patch.bot_sender_idx = note.senderIdx;
+  if (note?.senderAuth != null && Number.isFinite(note.senderAuth)) patch.bot_sender_auth = note.senderAuth;
 
   const { error } = await db().from('app_state').update(patch).match(ROW);
   if (error) console.error('[gccity] heartbeat 갱신 실패:', error.message);
@@ -82,10 +93,14 @@ export function botNoteFrom(req: Request): BotNote {
   const q = new URL(req.url).searchParams;
   const api2 = q.get('api2');
   const msgs = q.get('msgs');
+  const sidx = q.get('sidx');
+  const sauth = q.get('sauth');
   return {
     build: q.get('build'),
     api2: api2 === null ? null : api2 === '1' || api2 === 'true',
     msgCount: msgs === null ? null : Number(msgs),
+    senderIdx: sidx === null ? null : Number(sidx),
+    senderAuth: sauth === null ? null : Number(sauth),
   };
 }
 

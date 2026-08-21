@@ -4,7 +4,7 @@
  * 빌드 표식. 폰에 붙여넣기가 실제로 먹었는지 로그 첫 줄과 대시보드 봇 상태 줄에서 확인한다.
  * 고칠 때마다 올릴 것 — 이게 없어서 "옛 코드가 도는 중" 을 "코드가 잘못됐다" 로 오진한 적이 있다.
  */
-var BUILD = '2026-08-21-sender2';
+var BUILD = '2026-08-21-sender3';
 
 /**
  * ★ 이 봇은 카톡에 한 글자도 쓰지 않는다.
@@ -139,6 +139,9 @@ var SENDER_INDEX_MAX = 300;
  */
 var SENDER_TIE_MS = 4000;
 
+/** author.name 이 이만큼 연속 같으면 굳은 것으로 보고 로그에 남긴다. */
+var STICKY_RUN = 6;
+
 /** 한 문구에 매달아 두는 후보 수. `ㅋㅋ` 같은 문구가 색인을 통째로 먹지 않게. */
 var SENDER_SLOTS = 8;
 
@@ -180,6 +183,13 @@ var _qSince = 0;
 var _qPhoto = [];
 
 var _pend = [];                  // 첨부를 기다리는 메시지들
+
+/* 이름을 어디서 얻었는지 세어 심장박동에 싣는다. 폰에 가지 않고 진단하기 위한 것이다. */
+var _senderFromIndex = 0;        // 알림 색인이 준 이름 (믿을 수 있는 쪽)
+var _senderFromAuthor = 0;       // API2 chat.author.name 을 그대로 쓴 것 (굳을 수 있는 쪽)
+var _lastAuthor = '';
+var _authorRun = 0;
+var _stickyWarnAt = 0;
 
 var _claims = {};
 var _claimCount = 0;
@@ -301,7 +311,11 @@ function refreshConfig() {
   var url = CONFIG_ENDPOINT
     + '?build=' + encodeURIComponent(BUILD)
     + '&api2=' + (_api2 ? '1' : '0')
-    + '&msgs=' + _msgCount;
+    + '&msgs=' + _msgCount
+    // 이름을 무엇으로 붙였는지 — 알림 색인(sidx) 인지 API2 author(sauth) 인지.
+    // 이 둘의 비율이 "이름이 왜 다 같은 사람이지" 를 폰에 가지 않고 가르는 유일한 단서다
+    + '&sidx=' + _senderFromIndex
+    + '&sauth=' + _senderFromAuthor;
 
   var res = httpGet(url);
   if (res.code !== 200) {
@@ -579,13 +593,59 @@ function putSender(body, who, when, now) {
  * 이 메시지의 발화자를 확정한다. 못 고치면 원래 이름 그대로 둔다 — 메시지를 버리지 않는다.
  * 이름을 바꿨는지 여부를 돌려준다(붙들고 더 기다릴지 정하는 데 쓴다).
  */
+/**
+ * 발화자 확정. **알림 색인이 먼저다. API2 의 chat.author.name 은 그 다음이다.**
+ *
+ * ★ 왜 뒤집었나 (실측 2026-08-21):
+ *   17시 25분 이후 들어온 18건이 전부 `축하하는 죠르디` 로 저장됐다. 실제로는 좋은길·
+ *   뜨악이·감동받은 어피치·갈현동·어피치가 섞인 대화였다. API2 의 author.name 이
+ *   **한 사람 이름에 굳은** 것이다. 예전에는 `오픈채팅봇` 으로 뭉개졌는데(그건
+ *   SENDER_ALIASES 로 걸러졌다) 이번엔 **그럴듯한 진짜 닉네임**으로 굳어서
+ *   "껍데기일 때만 색인을 본다" 던 옛 규칙을 그대로 통과해 버렸다.
+ *
+ *   형제 프로젝트가 같은 함정을 먼저 밟았다 — speciai-kakao-bot 은 이은영이 쓴 글에
+ *   author.name 이 폰 주인(조사랑)으로 오는 것을 보고 API2 수집을 아예 껐다
+ *   (`speciai-bot.js` 머리말, 2026-08-20). 여기는 channelId 때문에 API2 를 못 끄니,
+ *   **이름만 알림 쪽으로 넘긴다.**
+ *
+ * 색인은 (본문 앞 60자 + 카톡이 찍은 시각)으로 맞춘 것이라 굳지 않는다.
+ * 색인에 없을 때만 author.name 을 쓰고, 그때는 몇 건 연속 같은 이름인지 세어 로그에 남긴다.
+ */
 function resolveSender(item) {
-  if (!senderLooksBogus(item.sender, item.nameHint, item.group)) return true;
   var real = lookupSender(item.text, item.tsMs);
-  if (!real || real === item.sender) return false;
-  if (DEBUG) Log.i('gccity[이름] "' + item.sender + '" → "' + real + '"');
-  item.sender = real;
+  if (real) {
+    if (real !== item.sender) {
+      if (DEBUG) Log.i('gccity[이름] "' + item.sender + '" → "' + real + '" (알림)');
+      item.sender = real;
+    }
+    item.senderSrc = 'idx';
+    return true;
+  }
+
+  if (senderLooksBogus(item.sender, item.nameHint, item.group)) return false;
+
+  // 색인이 비었다 — author.name 으로 때운다. 굳었는지는 finalize 에서 센다
+  // (sweepPending 이 같은 메시지로 여러 번 들어오므로 여기서 세면 숫자가 부푼다)
+  item.senderSrc = 'author';
   return true;
+}
+
+/**
+ * 같은 author.name 이 계속 나오면 굳은 것이다. 조용히 넘어가면 화면에서는
+ * "한 사람이 혼자 떠드는 방" 으로 보인다 — 실제로는 여러 명인데 이름만 뭉갠 것이다.
+ */
+function noteStickyAuthor(name) {
+  if (name === _lastAuthor) {
+    _authorRun++;
+  } else {
+    _lastAuthor = name;
+    _authorRun = 1;
+  }
+  if (_authorRun >= STICKY_RUN && (nowMs() - _stickyWarnAt) > 60000) {
+    _stickyWarnAt = nowMs();
+    Log.e('gccity: 같은 이름이 ' + _authorRun + '건 연속이다 (author="' + name
+      + '") — 알림 색인이 비어 API2 이름을 쓰는 중. 알림 접근 권한·미리보기 설정을 볼 것');
+  }
 }
 
 function textOf(chat) {
@@ -682,11 +742,15 @@ function onChat(chat) {
     }
 
     // 팔로우 방 — 발화자(알림에만 있다)와 첨부 주소를 알림이 줄 때까지 잠깐 기다린다.
+    // 색인에 없으면 알림이 올 때까지 잠깐 기다린다. resolveSender 가 false 를 주는 것은
+    // "아직 진짜 이름을 못 얻었다" 는 뜻이고, author.name 으로 때운 경우도 굳었을 수 있으니
+    // 색인 적중이 아니면 한 번은 기다려 본다.
     var named = resolveSender(item);
+    var fromIndex = (item.senderSrc === 'idx');
     var wantsAtt = looksLikeAttachment(text);
     var att = takeAtt(item.sender);
     // 대기표가 넘치면 기다리지 않고 그냥 보낸다 — 이름이 덜 예쁜 것보다 대화를 잃는 쪽이 나쁘다.
-    if (att === null && (wantsAtt || !named) && _pend.length < PEND_MAX) {
+    if (att === null && (wantsAtt || !named || !fromIndex) && _pend.length < PEND_MAX) {
       _pend.push({ item: item, until: nowMs() + (wantsAtt ? ATTACH_WAIT_MS : SENDER_WAIT_MS) });
       return;
     }
@@ -703,6 +767,17 @@ function onChat(chat) {
  * 파일이면 이름·형식만 실어 보낸다(바이트는 안 가져온다. 사람이 자료실에 넣는다).
  */
 function finalize(item, att) {
+  // 이름을 무엇으로 붙였는지는 여기서 한 번만 센다 — sweepPending 이 같은 메시지를
+  // 여러 번 훑기 때문에 resolveSender 안에서 세면 숫자가 부풀고 헛경보가 뜬다
+  if (item.senderSrc === 'idx') {
+    _senderFromIndex++;
+    _lastAuthor = item.sender;
+    _authorRun = 1;
+  } else if (item.senderSrc === 'author') {
+    _senderFromAuthor++;
+    noteStickyAuthor(item.sender);
+  }
+
   if (att !== null && att.isImage) {
     var b64 = readImage(att);
     if (b64) {
