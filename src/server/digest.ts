@@ -41,16 +41,34 @@ export type DigestResult = {
   error: string | null;
 };
 
+/*
+ * ★ enum 을 쓰지 않는다. SDK 가 구조화 출력 스키마를 만들 때 `enum`·`minimum` 같은
+ *   키워드를 API 가 받는 부분집합에 맞춰 **description 문자열로 옮긴다**(실측 2026-08-21).
+ *   즉 모델에게는 권고로만 전달되므로, 살짝 다른 값이 오면 zod 검증에서 **배치 전체가**
+ *   날아간다. 그래서 문자열로 받고 아래에서 우리가 정규화한다 — 한 항목이 이상해서
+ *   그 창의 민원을 통째로 잃는 것이 훨씬 나쁘다.
+ */
 const ItemSchema = z.object({
-  kind: z.enum(['report', 'resolution']).describe('민원 제기면 report, 담당자·시청의 회신이면 resolution'),
+  kind: z.string().describe('"report"(민원 제기) 또는 "resolution"(담당자·시청의 회신) 둘 중 하나'),
   title: z.string().describe('민원 제목. 40자 이내의 명사구'),
   summary: z.string().describe('무엇을 요구하거나 알린 것인지 두 문장 이내'),
   category: z.string().describe('교통·환경·공원·재건축·행정 같은 짧은 분류 한 낱말'),
-  anchorMessageId: z.number().int().describe('이 민원이 시작된 메시지의 id'),
-  messageIds: z.array(z.number().int()).describe('이 민원을 이루는 메시지 id 전부'),
-  confidence: z.enum(['high', 'medium', 'low']).describe('민원이라고 보는 확신도'),
+  anchorMessageId: z.number().describe('이 민원이 시작된 메시지의 id (대화록의 # 뒤 숫자)'),
+  messageIds: z.array(z.number()).describe('이 민원을 이루는 메시지 id 전부'),
+  confidence: z.string().describe('"high" · "medium" · "low" 중 하나'),
   reason: z.string().describe('왜 민원으로 봤는지 한 줄'),
 });
+
+/** 모델이 준 kind 를 우리 값으로 못 박는다. 모르는 값은 민원 제기로 본다(사람이 고친다). */
+export function normalizeKind(v: unknown): 'report' | 'resolution' {
+  return String(v ?? '').trim().toLowerCase().startsWith('resol') ? 'resolution' : 'report';
+}
+
+/** 확신도. 모르는 값은 낮게 잡는다 — 높게 잡으면 사람이 덜 들여다본다. */
+export function normalizeConfidence(v: unknown): 'high' | 'medium' | 'low' {
+  const t = String(v ?? '').trim().toLowerCase();
+  return t === 'high' ? 'high' : t === 'medium' ? 'medium' : 'low';
+}
 
 const OutSchema = z.object({
   items: z.array(ItemSchema).describe('찾아낸 민원. 없으면 빈 배열'),
@@ -192,29 +210,29 @@ export async function runDigest(opts: { hours?: number; now?: number } = {}): Pr
     const byId = new Map(rows.map((r) => [r.id, r]));
     const drafts = items
       .map((it) => {
-        const anchor = byId.get(it.anchorMessageId);
+        const anchor = byId.get(Math.trunc(Number(it.anchorMessageId)));
         if (!anchor) return null;   // 모델이 없는 id 를 지목했다. 지어내지 말고 버린다
         const quoted = (it.messageIds ?? [])
-          .map((id) => byId.get(id))
+          .map((id) => byId.get(Math.trunc(Number(id))))
           .filter(Boolean)
           .map((m) => `${m!.sender}: ${String(m!.body ?? '').trim()}`)
           .join('\n');
         return {
           dedup_key: `chat:${anchor.id}`,
           origin: 'chat',
-          kind: it.kind,
+          kind: normalizeKind(it.kind),
           title: it.title.trim().slice(0, 300),
           summary: it.summary.trim().slice(0, 1000),
           category: it.category.trim().slice(0, 60) || null,
           body: (quoted || String(anchor.body ?? '')).slice(0, 8000),
           author: anchor.sender || null,
           posted_at: anchor.sent_at,
-          reported_at: it.kind === 'report' ? anchor.sent_at : null,
-          resolved_at: it.kind === 'resolution' ? anchor.sent_at : null,
+          reported_at: normalizeKind(it.kind) === 'report' ? anchor.sent_at : null,
+          resolved_at: normalizeKind(it.kind) === 'resolution' ? anchor.sent_at : null,
           room_id: anchor.room_id,
           message_id: anchor.id,
           ai_draft: true,
-          ai_note: `${it.confidence} · ${it.reason}`.slice(0, 500),
+          ai_note: `${normalizeConfidence(it.confidence)} · ${it.reason}`.slice(0, 500),
           ai_model: MODEL,
         };
       })

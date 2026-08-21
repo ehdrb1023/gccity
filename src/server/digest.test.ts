@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTranscript } from './digest';
+import { buildTranscript, normalizeConfidence, normalizeKind } from './digest';
 
 /**
  * 대화록에 **메시지 id 를 앞에 다는 것**이 이 함수의 전부다.
@@ -23,5 +23,27 @@ describe('buildTranscript', () => {
     expect(buildTranscript([{ id: 1, sender: '', body: '테스트', sent_at: '2026-08-21T00:00:00Z' }])).toContain(
       '(이름 없음): 테스트',
     );
+  });
+});
+
+/**
+ * ★ 구조화 출력에 enum 을 못 쓴다 — SDK 가 그 키워드를 description 으로 옮기기 때문에
+ *   모델에게는 권고로만 간다. 그래서 우리가 정규화한다. 한 항목이 이상해서 그 창의
+ *   민원을 통째로 잃는 것이 훨씬 나쁘다.
+ */
+describe('normalizeKind / normalizeConfidence', () => {
+  it('회신 계열은 resolution, 나머지는 전부 report 로 떨어뜨린다', () => {
+    expect(normalizeKind('resolution')).toBe('resolution');
+    expect(normalizeKind('RESOLUTION ')).toBe('resolution');
+    expect(normalizeKind('report')).toBe('report');
+    expect(normalizeKind('민원')).toBe('report');
+    expect(normalizeKind(undefined)).toBe('report');
+  });
+
+  it('모르는 확신도는 낮게 잡는다 — 높게 잡으면 사람이 덜 들여다본다', () => {
+    expect(normalizeConfidence('high')).toBe('high');
+    expect(normalizeConfidence('Medium')).toBe('medium');
+    expect(normalizeConfidence('아주 확실')).toBe('low');
+    expect(normalizeConfidence(null)).toBe('low');
   });
 });
