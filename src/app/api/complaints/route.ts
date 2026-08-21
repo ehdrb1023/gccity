@@ -21,7 +21,7 @@ import {
   type ComplaintStatus,
 } from '@/server/complaints';
 import type { AuthorKind, PostKind } from '@/server/complaint-classify';
-import { confirmDraft, lastRun, runDigest } from '@/server/digest';
+import { confirmDraft, digestDue, DIGEST_HOURS, lastRun, runDigest } from '@/server/digest';
 import { addSource, countDue, deleteSource, editSource, listSources, runSources } from '@/server/complaint-crawl';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +33,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   try {
     const sources = await listSources();
+    const digestRun = await lastRun();
     return NextResponse.json({
       ok: true,
       complaints: await listComplaints({
@@ -44,7 +45,10 @@ export async function GET(req: Request) {
       // 흐름 요약 — 접수/처리 건수와 평균 처리일. 모수를 함께 내보낸다
       flow: await getFlowStats(),
       // 마지막 카톡 분석 결과. 실패도 그대로 화면에 뜬다
-      digest: await lastRun(),
+      digest: digestRun,
+      // cron 이 하루 한 번뿐이라(Hobby 제한) 밀린 것을 화면이 알려준다
+      digestDue: digestDue(digestRun),
+      digestHours: DIGEST_HOURS,
       authors: await listAuthors(),
       sources,
       // 자동 크롤이 밀렸다는 것을 화면에 드러낸다. 몰래 긁지 않고 사람에게 알린다

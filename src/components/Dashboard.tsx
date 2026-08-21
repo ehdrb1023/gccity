@@ -1106,6 +1106,8 @@ function Complaints() {
   const [authors, setAuthors] = useState<CivicAuthor[]>([]);
   const [flow, setFlow] = useState<Flow | null>(null);
   const [digest, setDigest] = useState<DigestRun | null>(null);
+  const [digestDue, setDigestDue] = useState(false);
+  const [digestHours, setDigestHours] = useState(6);
   /** 초안만 보기 — 모델이 넣은 것을 사람이 카페와 대조해 훑는 화면이다 */
   const [draftsOnly, setDraftsOnly] = useState(false);
   const [due, setDue] = useState(0);
@@ -1140,6 +1142,8 @@ function Complaints() {
       setAuthors(json.authors ?? []);
       setFlow(json.flow ?? null);
       setDigest(json.digest ?? null);
+      setDigestDue(Boolean(json.digestDue));
+      setDigestHours(json.digestHours ?? 6);
       setDue(json.due);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -1265,6 +1269,17 @@ function Complaints() {
           <button className="btn ghost" onClick={() => setMsg(null)}>
             닫기
           </button>
+        </div>
+      )}
+
+      {/*
+        ★ 자동 분석은 하루 한 번뿐이다(Vercel Hobby 는 cron 을 하루 1회로 제한한다).
+          그 사이 공백을 몰래 메우지 않고 사람에게 알린다.
+      */}
+      {digestDue && (
+        <div className="note">
+          <b>카톡 분석이 밀렸다</b> — 마지막 분석 이후 {digestHours}시간이 지났다. 위{' '}
+          <b>지금 분석</b> 을 누르면 그동안 쌓인 대화에서 민원을 뽑는다.
         </div>
       )}
 

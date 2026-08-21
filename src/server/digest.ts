@@ -289,6 +289,20 @@ export async function lastRun(): Promise<DigestRun | null> {
   };
 }
 
+/**
+ * 분석할 때가 됐는가. cron 은 하루 한 번뿐이라(Hobby 요금제 제한) 그 사이의 공백을
+ * 화면이 알려준다 — 몰래 돌리지 않고 [지금 분석] 을 누를 수 있게.
+ */
+export function digestDue(run: DigestRun | null, now = Date.now()): boolean {
+  if (!run || !run.ok) return true;
+  const t = Date.parse(run.windowTo);
+  if (Number.isNaN(t)) return true;
+  return now - t >= DEFAULT_HOURS * 3600_000;
+}
+
+/** 화면에 적을 창 길이(시간). */
+export const DIGEST_HOURS = DEFAULT_HOURS;
+
 /** 초안을 사람이 확정한다. 배지가 사라지고 보통 민원과 같아진다. */
 export async function confirmDraft(id: string): Promise<void> {
   const { error } = await db()
