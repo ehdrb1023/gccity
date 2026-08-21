@@ -20,7 +20,7 @@
 
 `speciai-kakao-bot` / linktalk 과 **다른 프로젝트**를 새로 만든다(이유는 CLAUDE.md).
 SQL Editor 에 `supabase/migrations/` 의 파일을 **번호순으로** 붙여넣고 실행한다
-(`0001_init.sql` → `0002_files.sql` → `0003_channel_id.sql` → `0004_complaints.sql`).
+(`0001_init.sql` → … → `0007_digest.sql`).
 `0003` 은 이미 쓰던 프로젝트에도 안전하다 — 두 번 돌려도 되고, 기존 방·대화를 지우지 않는다.
 
 ### 2. 환경변수
@@ -34,7 +34,10 @@ SQL Editor 에 `supabase/migrations/` 의 파일을 **번호순으로** 붙여�
 | `GCCITY_INGEST_TOKEN` | 봇과 공유하는 비밀. 아무 긴 문자열 |
 | `GCCITY_PASSWORD` | 대시보드 비밀번호 |
 | `GCCITY_DISCOVERY_MINUTES` | 방 찾기 모드 지속 시간(분). 기본 30 |
-| `CRON_SECRET` | 민원 출처 자동 수집용. Vercel 이 cron 요청에 `Bearer` 로 실어 보낸다. **없으면 자동 수집이 아예 안 돈다**(fail-closed) — 손으로 [지금 긁기] 는 된다 |
+| `ANTHROPIC_API_KEY` | 카톡 대화 → 민원 초안 분석용. **없으면 분석만 안 돈다**(fail-closed). 나머지 기능은 그대로 |
+| `GCCITY_DIGEST_HOURS` | 분석 창 길이(시간). 기본 6 |
+| `GCCITY_DIGEST_MODEL` | 분석 모델. 기본 `claude-opus-5` |
+| `CRON_SECRET` | 민원 출처 자동 수집·카톡 분석용. Vercel 이 cron 요청에 `Bearer` 로 실어 보낸다. **없으면 자동 수집이 아예 안 돈다**(fail-closed) — 손으로 [지금 긁기] 는 된다 |
 
 ```bash
 npm install
@@ -105,7 +108,10 @@ gccity: 알림 훅 등록 — 첨부(사진·파일 이름) 전용
    등록할 때 robots.txt 를 먼저 보고, 막힌 곳이면 **등록 자체를 거부하고 사유를 알려준다.**
    자동 수집은 하루 한 번(`vercel.json` 의 cron), 급하면 **[지금 긁기]**.
 3. **카톡에서 담기** — [대화] 탭에서 말풍선에 마우스를 올리면 뜨는 **[민원]** 버튼.
-   원문 전체가 함께 저장된다.
+   원문 전체가 함께 저장되고, 담당 부서·완료 예정일이 본문에서 자동으로 뽑힌다.
+4. **카톡 자동 분석** — 6시간마다 그동안 쌓인 대화를 모델이 읽고 민원을 **초안**으로 넣는다
+   (`AI 초안` 배지). 사람이 카페와 대조해 [확정] 하거나 [지우기] 한다.
+   급하면 민원실의 **[지금 분석]** 버튼.
 
 같은 글은 몇 번 담아도 한 건이다(주소 → 없으면 출처+제목 해시). 다시 긁어도
 **사람이 바꿔둔 상태·메모·분류는 덮이지 않는다.**

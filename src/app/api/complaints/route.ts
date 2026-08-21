@@ -21,6 +21,7 @@ import {
   type ComplaintStatus,
 } from '@/server/complaints';
 import type { AuthorKind, PostKind } from '@/server/complaint-classify';
+import { confirmDraft, lastRun, runDigest } from '@/server/digest';
 import { addSource, countDue, deleteSource, editSource, listSources, runSources } from '@/server/complaint-crawl';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +43,8 @@ export async function GET(req: Request) {
       counts: await countByStatus(),
       // 흐름 요약 — 접수/처리 건수와 평균 처리일. 모수를 함께 내보낸다
       flow: await getFlowStats(),
+      // 마지막 카톡 분석 결과. 실패도 그대로 화면에 뜬다
+      digest: await lastRun(),
       authors: await listAuthors(),
       sources,
       // 자동 크롤이 밀렸다는 것을 화면에 드러낸다. 몰래 긁지 않고 사람에게 알린다
@@ -151,6 +154,21 @@ export async function POST(req: Request) {
 
       case 'unlink': {
         await unlinkResolution(String(body.id ?? ''));
+        return NextResponse.json({ ok: true });
+      }
+
+      /**
+       * 지금 분석. 창을 주면 그만큼 거슬러 올라가고, 안 주면 마지막 성공 실행 이후 전부.
+       * ★ 결과를 그대로 돌려준다 — 몇 건 읽어 몇 건 뽑았고 그중 몇 건이 새것인지.
+       */
+      case 'digest': {
+        const out = await runDigest(body.hours ? { hours: Number(body.hours) } : {});
+        return NextResponse.json({ ok: true, digest: out });
+      }
+
+      /** 모델이 넣은 초안을 사람이 확정한다. */
+      case 'confirm': {
+        await confirmDraft(String(body.id ?? ''));
         return NextResponse.json({ ok: true });
       }
 

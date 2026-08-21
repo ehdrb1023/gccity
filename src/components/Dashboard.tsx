@@ -39,6 +39,9 @@ type State = {
     build: string | null;
     api2: boolean | null;
     msgCount: number | null;
+    /** 이름을 알림 색인에서 얻은 건수 / API2 author 로 때운 건수 */
+    senderIdx: number | null;
+    senderAuth: number | null;
   };
   discovery: { on: boolean; until: string | null };
   rooms: Room[];
@@ -211,6 +214,13 @@ export default function Dashboard() {
             {state.bot.build && ` · ${state.bot.build}`}
             {state.bot.api2 === false && ' · ⚠️ API2 꺼짐'}
             {state.bot.api2 === true && state.bot.msgCount != null && ` · 수신 ${state.bot.msgCount}건`}
+            {/*
+              ★ 이름을 무엇으로 붙였는지. author 쪽만 늘면 API2 이름이 굳었을 수 있다 —
+                화면에서는 "한 사람이 혼자 떠드는 방" 과 구분이 안 된다.
+            */}
+            {(state.bot.senderIdx != null || state.bot.senderAuth != null) &&
+              ` · 이름 알림 ${state.bot.senderIdx ?? 0}/API2 ${state.bot.senderAuth ?? 0}`}
+            {(state.bot.senderIdx ?? 0) === 0 && (state.bot.senderAuth ?? 0) >= 6 && ' ⚠️ 알림이 이름을 주지 않는다'}
           </small>
         </div>
 
@@ -984,6 +994,19 @@ type Complaint = {
   summary: string | null;
   department: string | null;
   dueAt: string | null;
+  aiDraft: boolean;
+  aiNote: string | null;
+};
+
+type DigestRun = {
+  startedAt: string;
+  windowFrom: string;
+  windowTo: string;
+  messages: number;
+  drafted: number;
+  added: number;
+  ok: boolean;
+  error: string | null;
 };
 
 type PostKind = 'report' | 'resolution' | 'notice' | 'unknown';
@@ -1082,6 +1105,9 @@ function Complaints() {
   const [sources, setSources] = useState<CrawlSource[]>([]);
   const [authors, setAuthors] = useState<CivicAuthor[]>([]);
   const [flow, setFlow] = useState<Flow | null>(null);
+  const [digest, setDigest] = useState<DigestRun | null>(null);
+  /** 초안만 보기 — 모델이 넣은 것을 사람이 카페와 대조해 훑는 화면이다 */
+  const [draftsOnly, setDraftsOnly] = useState(false);
   const [due, setDue] = useState(0);
   const [status, setStatus] = useState<'all' | CivicStatus>('all');
   const [kind, setKind] = useState<'all' | PostKind>('all');
@@ -1113,6 +1139,7 @@ function Complaints() {
       setSources(json.sources);
       setAuthors(json.authors ?? []);
       setFlow(json.flow ?? null);
+      setDigest(json.digest ?? null);
       setDue(json.due);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -1205,6 +1232,25 @@ function Complaints() {
           <button className="btn" disabled={busy} onClick={() => void crawl()}>
             지금 긁기
           </button>
+          <button
+            className="btn"
+            disabled={busy}
+            title="쌓인 카톡을 읽어 민원 초안을 만든다"
+            onClick={async () => {
+              setMsg('카톡을 분석하는 중… (수십 초 걸릴 수 있다)');
+              const json = await act({ action: 'digest' });
+              if (!json) { setMsg(null); return; }
+              const d = json.digest as DigestRun & { error: string | null };
+              setMsg(
+                d.error
+                  ? `분석 실패 — ${d.error}`
+                  : `${d.messages}건 읽어 ${d.drafted}건 뽑았고 ${d.added}건 새로 담았다`,
+              );
+              await reload(status, q, kind);
+            }}
+          >
+            지금 분석
+          </button>
         </div>
       </header>
 
@@ -1219,6 +1265,25 @@ function Complaints() {
           <button className="btn ghost" onClick={() => setMsg(null)}>
             닫기
           </button>
+        </div>
+      )}
+
+      {/*
+        마지막 카톡 분석. ★ 실패를 숨기지 않는다 — 0건이 "조용한 하루" 인지
+        "키가 없어서 아예 안 돌았다" 인지 화면에서 갈라야 한다.
+      */}
+      {digest && (
+        <div className="note">
+          {digest.ok ? (
+            <>
+              <b>마지막 카톡 분석</b> {relTime(digest.startedAt)} — {digest.messages}건 읽어{' '}
+              {digest.drafted}건 뽑았고 {digest.added}건 새로 담았다
+            </>
+          ) : (
+            <>
+              <b>⚠️ 마지막 카톡 분석 실패</b> ({relTime(digest.startedAt)}) — {digest.error}
+            </>
+          )}
         </div>
       )}
 
@@ -1376,6 +1441,9 @@ function Complaints() {
         <button data-on={kind === 'all'} onClick={() => setKind('all')}>
           전체
         </button>
+        <button data-on={draftsOnly} onClick={() => setDraftsOnly(!draftsOnly)}>
+          AI 초안만
+        </button>
         {KIND.map((k) => (
           <button key={k.key} data-on={kind === k.key} onClick={() => setKind(k.key)}>
             {k.label}{' '}
@@ -1409,7 +1477,7 @@ function Complaints() {
         />
       </div>
 
-      {items.length === 0 ? (
+      {(draftsOnly ? items.filter((c) => c.aiDraft) : items).length === 0 ? (
         <div className="empty">
           <b>{q || status !== 'all' ? '조건에 맞는 민원이 없다' : '아직 담아둔 민원이 없다'}</b>
           게시판 목록을 <b>붙여넣기</b> 하거나, <b>출처</b> 에 RSS·게시판 주소를 등록하거나,
@@ -1417,7 +1485,7 @@ function Complaints() {
         </div>
       ) : (
         <ul className="civics">
-          {items.map((c) => (
+          {(draftsOnly ? items.filter((c) => c.aiDraft) : items).map((c) => (
             <li key={c.id} data-kind={c.kind}>
               {/* 종류를 손으로 고치면 잠긴다 — 이후 재분류가 그 행을 덮지 않는다 */}
               <select
@@ -1453,6 +1521,8 @@ function Complaints() {
 
               <div className="cmeta">
                 <span className="ctitle">
+                  {/* 모델이 넣은 것은 사람이 넣은 것과 반드시 구분해 보여준다 */}
+                  {c.aiDraft && <span className="aibadge" title={c.aiNote ?? ''}>AI 초안</span>}
                   {c.url ? (
                     <a href={c.url} target="_blank" rel="noreferrer noopener">
                       {c.title}
@@ -1477,7 +1547,11 @@ function Complaints() {
                     {c.dueAt && ` · ⏳ ${new Date(c.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정`}
                   </span>
                 )}
-                {c.body && <span className="cbody">{c.body.slice(0, 200)}</span>}
+                {c.summary ? (
+                  <span className="cbody">{c.summary}</span>
+                ) : (
+                  c.body && <span className="cbody">{c.body.slice(0, 200)}</span>
+                )}
                 {c.note && <span className="cnote">✎ {c.note}</span>}
               </div>
 
@@ -1519,6 +1593,18 @@ function Complaints() {
                 </button>
               )}
 
+              {c.aiDraft && (
+                <button
+                  className="btn primary"
+                  disabled={busy}
+                  title={c.aiNote ?? ''}
+                  onClick={async () => {
+                    await after(await act({ action: 'confirm', id: c.id }));
+                  }}
+                >
+                  확정
+                </button>
+              )}
               <button
                 className="btn ghost"
                 disabled={busy}

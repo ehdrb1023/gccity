@@ -58,6 +58,9 @@ export type Complaint = {
   summary: string | null;
   department: string | null;
   dueAt: string | null;
+  /** 모델이 넣은 초안. 사람이 확정하기 전까지 배지가 붙는다 */
+  aiDraft: boolean;
+  aiNote: string | null;
 };
 
 /** 목록에 넣을 한 건. 크롤러와 붙여넣기 파서가 공통으로 만든다. */
@@ -278,7 +281,7 @@ export function parsePastedList(text: string, now = Date.now()): ComplaintDraft[
 
 const SELECT =
   'id, origin, title, url, author, board, posted_at, body, category, status, note, room_id, message_id, created_at, ' +
-  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, due_at';
+  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, due_at, ai_draft, ai_note';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toComplaint(r: any): Complaint {
@@ -305,6 +308,8 @@ function toComplaint(r: any): Complaint {
     summary: r.summary ?? null,
     department: r.department ?? null,
     dueAt: r.due_at ?? null,
+    aiDraft: Boolean(r.ai_draft),
+    aiNote: r.ai_note ?? null,
   };
 }
 
