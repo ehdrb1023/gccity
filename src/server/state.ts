@@ -5,6 +5,19 @@ export type AppState = {
   configVersion: number;
   botLastSeenAt: string | null;
   botLastGapMs: number | null;
+  /** 폰에 실제로 올라가 있는 봇 스크립트의 빌드 표식. 붙여넣기가 먹었는지 화면에서 본다 */
+  botBuild: string | null;
+  /** 봇이 API2(BotManager·Event.MESSAGE)로 붙었는가. false 면 channelId 를 얻을 수 없다 */
+  botApi2: boolean | null;
+  /** 봇이 켜진 뒤 받은 카톡 메시지 수. API2 는 켜졌는데 0 이면 이벤트가 안 오는 것이다 */
+  botMsgCount: number | null;
+};
+
+/** 봇이 심장박동에 얹어 보내는 자기 상태. 전부 선택 값이다 — 옛 봇도 그냥 돌아야 한다. */
+export type BotNote = {
+  build?: string | null;
+  api2?: boolean | null;
+  msgCount?: number | null;
 };
 
 const ROW = { id: 1 };
@@ -12,7 +25,7 @@ const ROW = { id: 1 };
 export async function getAppState(): Promise<AppState> {
   const { data, error } = await db()
     .from('app_state')
-    .select('discovery_until, config_version, bot_last_seen_at, bot_last_gap_ms')
+    .select('discovery_until, config_version, bot_last_seen_at, bot_last_gap_ms, bot_build, bot_api2, bot_msg_count')
     .eq('id', 1)
     .maybeSingle();
   // supabase-js 는 쿼리 실패를 throw 하지 않는다. 조용히 기본값으로 넘어가면
@@ -24,6 +37,9 @@ export async function getAppState(): Promise<AppState> {
     configVersion: Number(data.config_version),
     botLastSeenAt: data.bot_last_seen_at,
     botLastGapMs: data.bot_last_gap_ms,
+    botBuild: data.bot_build ?? null,
+    botApi2: data.bot_api2 ?? null,
+    botMsgCount: data.bot_msg_count ?? null,
   };
 }
 
@@ -40,16 +56,37 @@ export function discoveryOn(state: AppState, now = Date.now()): boolean {
  * 간격은 리셋된다. 서버 기준이라야 "몇 분간 신호가 없었는가" 가 남는다.
  * 그 값이 Doze(간격만 벌어짐)와 죽음(끊김)을 가르는 유일한 단서다.
  */
-export async function touchHeartbeat(): Promise<void> {
+export async function touchHeartbeat(note?: BotNote): Promise<void> {
   const now = new Date();
   const { data } = await db().from('app_state').select('bot_last_seen_at').eq('id', 1).maybeSingle();
   const prev = data?.bot_last_seen_at ? Date.parse(data.bot_last_seen_at) : null;
   const gap = prev && !Number.isNaN(prev) ? Math.max(0, now.getTime() - prev) : null;
-  const { error } = await db()
-    .from('app_state')
-    .update({ bot_last_seen_at: now.toISOString(), bot_last_gap_ms: gap, updated_at: now.toISOString() })
-    .match(ROW);
+
+  const patch: Record<string, unknown> = {
+    bot_last_seen_at: now.toISOString(),
+    bot_last_gap_ms: gap,
+    updated_at: now.toISOString(),
+  };
+  // 봇이 실어 보낸 것만 덮는다. 안 보낸 칸을 null 로 밀면 인입 요청이 설정 요청이 남긴
+  // 값을 지워, 화면의 빌드·API2 표시가 몇 초마다 깜빡인다.
+  if (note?.build != null) patch.bot_build = String(note.build).slice(0, 40);
+  if (note?.api2 != null) patch.bot_api2 = note.api2;
+  if (note?.msgCount != null && Number.isFinite(note.msgCount)) patch.bot_msg_count = note.msgCount;
+
+  const { error } = await db().from('app_state').update(patch).match(ROW);
   if (error) console.error('[gccity] heartbeat 갱신 실패:', error.message);
+}
+
+/** 봇 요청의 쿼리에 실려 오는 자기 상태를 읽는다 (`?build=…&api2=1&msgs=12`). */
+export function botNoteFrom(req: Request): BotNote {
+  const q = new URL(req.url).searchParams;
+  const api2 = q.get('api2');
+  const msgs = q.get('msgs');
+  return {
+    build: q.get('build'),
+    api2: api2 === null ? null : api2 === '1' || api2 === 'true',
+    msgCount: msgs === null ? null : Number(msgs),
+  };
 }
 
 /** 봇이 설정을 다시 받아가게 만드는 신호. 팔로우·방 찾기 모드가 바뀔 때마다 올린다. */

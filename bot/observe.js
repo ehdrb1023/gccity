@@ -4,6 +4,11 @@
  * ★ 이 스크립트는 아무것도 수집하지 않는다. 서버로 한 바이트도 보내지 않고,
  *   카톡 방에 한 글자도 쓰지 않는다. 하는 일은 폰 로그에 관찰 결과를 남기는 것뿐이다.
  *
+ * ★ 2026-08-20: 수집 봇은 방을 **channelId** 로 가르게 바뀌었다(알림 열쇠는 은퇴).
+ *   그래서 이 스크립트의 제일 쓸모 있는 줄은 이제 **[CH]** 다 — 방마다 channelId 를 찍어주므로
+ *   그 숫자를 대시보드 [방 고르기] 에 그대로 치면 등록이 끝난다.
+ *   아래 알림 관찰(①②③)은 옛 열쇠 시절의 것이라 이제 **첨부(사진·파일) 진단용**으로 남긴다.
+ *
  * 목적 — CLAUDE.md "0단계" 의 세 가지를 실측으로 확정한다.
  *   ① 열쇠가 방마다 다른가        → [요약] 의 후보가 방 수만큼 갈라지는지 본다
  *   ② 열쇠가 시간이 지나도 같은가 → 재부팅 후 [이전관찰] 과 대조한다  ★ 제일 중요
@@ -469,6 +474,51 @@ function response(room, msg, sender, isGroupChat, replier, imageDB, packageName)
   } catch (e) {}
 }
 
+/**
+ * ★ API2 메시지 이벤트 — **이 폰에 오는 방들의 channelId 를 찍는다.**
+ *
+ * 수집 봇이 방을 가르는 유일한 축이 이 값이다. 여기 찍힌 숫자를 대시보드 [방 고르기] 에
+ * 그대로 치면 그 방이 등록된다. 방 이름(room)은 이 폰에서 알림 제목이라 못 믿는다 —
+ * 단톡방인데도 사람 이름이 오는 일이 있다. 어디까지나 눈으로 알아보는 힌트다.
+ */
+var _chSeen = {};
+
+function onChatProbe(chat) {
+  try {
+    var ch = '';
+    try { ch = String(chat.channelId || ''); } catch (eC) {}
+    if (!ch) {
+      try {
+        if (chat.room && typeof chat.room !== 'string') ch = String(chat.room.channelId || '');
+      } catch (eR) {}
+    }
+
+    var room = '';
+    try {
+      var rm = chat.room;
+      room = (typeof rm === 'string') ? String(rm) : (rm && rm.name ? String(rm.name) : '');
+    } catch (eN) {}
+
+    var sender = '';
+    try { sender = String(chat.author && chat.author.name ? chat.author.name : ''); } catch (eS) {}
+
+    var body = '';
+    try { body = String(chat.content === null || chat.content === undefined ? '' : chat.content); } catch (eB) {}
+
+    if (!ch) {
+      Log.e('gccity[CH] channelId 가 없다 — 이 프로젝트가 API2 가 아니거나 앱 버전이 낮다');
+      return;
+    }
+
+    var first = !_chSeen[ch];
+    _chSeen[ch] = (_chSeen[ch] || 0) + 1;
+    Log.i('gccity[CH] ' + ch + ' | 표시이름="' + room + '" 발신자="' + sender + '" 본문='
+      + preview(body) + ' | 이 방 ' + _chSeen[ch] + '번째' + (first ? '  ← 새 방' : ''));
+  } catch (e) {
+    Log.e('gccity[CH] 예외 — ' + e);
+  }
+}
+
 // ── 진입점 ────────────────────────────────────────────────────
 
 Log.i('gccity: 관찰 시작 v2026-08-18a PREVIEW_CHARS=' + PREVIEW_CHARS
@@ -481,8 +531,9 @@ try {
     var bot = BotManager.getCurrentBot();
     if (bot && bot.on) {
       bot.on(Event.NOTIFICATION_POSTED, onKakaoNoti);
+      bot.on(Event.MESSAGE, onChatProbe);   // ★ channelId 는 이 훅으로만 온다
       _api2 = true;
-      Log.i('gccity: 알림 훅 등록 성공 (API2)');
+      Log.i('gccity: 알림 훅 + 메시지 훅 등록 성공 (API2) — [CH] 줄에 channelId 가 찍힌다');
     }
   }
 } catch (e) {
@@ -494,4 +545,5 @@ if (!_api2) {
 
 // 알림이 아예 안 들어오는 것과 "안 왔다" 를 구분하려면 시작 로그만으로는 부족하다.
 // 첫 알림이 올 때까지 이 줄이 마지막이면, 알림 접근 권한이나 카톡 알림 설정을 볼 것.
-Log.i('gccity: 대기 중 — 목표 오픈채팅방과 **다른 단톡방** 양쪽에서 메시지를 받아야 ①을 확인할 수 있다');
+Log.i('gccity: 대기 중 — 목표 방에서 메시지가 오면 [CH] 줄에 channelId 가 찍힌다. '
+  + '그 숫자를 대시보드 [방 고르기] 에 넣으면 등록 끝이다.');

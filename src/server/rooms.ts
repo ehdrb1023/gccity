@@ -1,9 +1,12 @@
 import { db } from '@/lib/db';
+import { isLegacyKey, normalizeChannelId } from './ingest';
+import { signPhotoUrls } from './photos';
 import { bumpConfigVersion } from './state';
 
 export type Room = {
   id: string;
-  roomKey: string;
+  channelId: string;
+  legacyKey: boolean;      // 옛 알림 열쇠로 만들어진 행. 이제 아무것도 안 들어온다
   displayName: string | null;
   nameHint: string | null;
   followed: boolean;
@@ -17,13 +20,14 @@ export type Room = {
 };
 
 const SELECT =
-  'id, room_key, display_name, name_hint, followed, is_group, seen_count, message_count, last_seen_at, last_message_at, last_sender, last_preview';
+  'id, channel_id, display_name, name_hint, followed, is_group, seen_count, message_count, last_seen_at, last_message_at, last_sender, last_preview';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toRoom(r: any): Room {
   return {
     id: r.id,
-    roomKey: r.room_key,
+    channelId: r.channel_id,
+    legacyKey: isLegacyKey(String(r.channel_id ?? '')),
     displayName: r.display_name,
     nameHint: r.name_hint,
     followed: r.followed,
@@ -48,11 +52,65 @@ export async function listRooms(): Promise<Room[]> {
   return (data ?? []).map(toRoom);
 }
 
-/** 봇에게 내려보낼 목록. **열쇠만** 내려보낸다 — 봇은 이름으로 방을 가리지 않는다. */
-export async function followedKeys(): Promise<string[]> {
-  const { data, error } = await db().from('rooms').select('room_key').eq('followed', true);
+/** 봇에게 내려보낼 목록. **channelId 만** 내려보낸다 — 봇은 이름으로 방을 가리지 않는다. */
+export async function followedChannelIds(): Promise<string[]> {
+  const { data, error } = await db().from('rooms').select('channel_id').eq('followed', true);
   if (error) throw new Error(`팔로우 목록 조회 실패: ${error.message}`);
-  return (data ?? []).map((r: { room_key: string }) => r.room_key);
+  return (data ?? []).map((r: { channel_id: string }) => r.channel_id);
+}
+
+/**
+ * 대시보드에서 channelId 를 직접 쳐서 방을 등록한다.
+ *
+ * 방 찾기 모드를 켜지 않고도 방을 정할 수 있는 유일한 경로다 — 그리고 이쪽이 **개인정보를
+ * 한 건도 흘리지 않는다.** 방 찾기는 켜져 있는 동안 이 폰의 모든 방(개인 카톡 포함)의
+ * 발신자와 앞 12자를 서버로 올리지만, 여기는 사람이 아는 숫자 하나를 칠 뿐이다.
+ *
+ * 이름은 **따로 받는다.** channelId 를 방 이름으로 쓰면 화면이 숫자 무더기가 된다.
+ * 이름은 언제든 [이름] 버튼으로 고칠 수 있고, 봇에게는 내려보내지 않는다.
+ */
+export async function addRoomByChannelId(rawId: string, name: string): Promise<{ id: string; created: boolean }> {
+  const channelId = normalizeChannelId(rawId);
+  if (!channelId) throw new Error('channelId 는 숫자다. 봇 로그의 ch=[…] 안 숫자를 넣을 것');
+  if (channelId.length < 6) throw new Error(`channelId 가 너무 짧다 (${channelId}) — 잘못 붙여넣은 것 같다`);
+
+  const clean = name.trim().slice(0, 60);
+
+  const { data: existing, error: readErr } = await db()
+    .from('rooms')
+    .select('id, followed')
+    .eq('channel_id', channelId)
+    .maybeSingle();
+  if (readErr) throw new Error(`방 조회 실패: ${readErr.message}`);
+
+  if (existing) {
+    const patch: Record<string, unknown> = {
+      followed: true,
+      followed_at: new Date().toISOString(),
+      last_sender: null,
+      last_preview: null,
+      preview_expires_at: null,
+    };
+    if (clean) patch.display_name = clean;
+    const { error } = await db().from('rooms').update(patch).eq('id', existing.id);
+    if (error) throw new Error(`방 등록 실패: ${error.message}`);
+    await bumpConfigVersion();
+    return { id: existing.id, created: false };
+  }
+
+  const { data, error } = await db()
+    .from('rooms')
+    .insert({
+      channel_id: channelId,
+      display_name: clean || null,
+      followed: true,
+      followed_at: new Date().toISOString(),
+    })
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`방 등록 실패: ${error.message}`);
+  await bumpConfigVersion();
+  return { id: data!.id, created: true };
 }
 
 export async function setFollowed(id: string, followed: boolean): Promise<void> {
@@ -80,9 +138,9 @@ export async function renameRoom(id: string, name: string): Promise<void> {
 }
 
 /**
- * 방과 그 대화를 지운다(cascade). 후보 목록 정리용이다.
+ * 방과 그 대화를 지운다(cascade). 후보 목록·옛 열쇠 정리용이다.
  *
- * 팔로우 중인 방은 실수로 지우면 복구가 없다 — 알림은 지나가면 끝이라 다시 받을 수 없다.
+ * 팔로우 중인 방은 실수로 지우면 복구가 없다 — 지나간 대화는 다시 받을 수 없다.
  * 그래서 팔로우를 먼저 끄게 하고, 켜져 있으면 거부한다.
  */
 export async function deleteRoom(id: string): Promise<void> {
@@ -100,29 +158,35 @@ export type Message = {
   sender: string;
   body: string;
   sentAt: string;
-  attachmentUrl: string | null;
+  /** 'image' | 'file' | null. file 은 **이름만** 있다 — 바이트는 사람이 자료실에 넣는다 */
   attachmentType: string | null;
   attachmentName: string | null;
+  /** 사진의 서명 URL. image 인데 이 값이 없으면 봇이 사진을 못 올린 것이다 */
+  attachmentUrl: string | null;
 };
 
 export async function listMessages(roomId: string, limit = 200): Promise<Message[]> {
   const { data, error } = await db()
     .from('messages')
-    .select('id, sender, body, sent_at, attachment_url, attachment_type, attachment_name')
+    .select('id, sender, body, sent_at, attachment_path, attachment_type, attachment_name')
     .eq('room_id', roomId)
     .order('sent_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(limit);
   if (error) throw new Error(`메시지 조회 실패: ${error.message}`);
-  return (data ?? [])
+
+  const rows = data ?? [];
+  const signed = await signPhotoUrls(rows.map((m: any) => m.attachment_path).filter(Boolean));
+
+  return rows
     .map((m: any) => ({
       id: Number(m.id),
       sender: m.sender,
       body: m.body,
       sentAt: m.sent_at,
-      attachmentUrl: m.attachment_url,
       attachmentType: m.attachment_type,
       attachmentName: m.attachment_name,
+      attachmentUrl: m.attachment_path ? signed.get(m.attachment_path) ?? null : null,
     }))
     .reverse(); // 화면은 오래된 것이 위
 }

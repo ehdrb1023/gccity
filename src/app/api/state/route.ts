@@ -26,6 +26,9 @@ export async function GET(req: Request) {
       bot: {
         lastSeenAt: state.botLastSeenAt,
         lastGapMs: state.botLastGapMs,
+        build: state.botBuild,
+        api2: state.botApi2,
+        msgCount: state.botMsgCount,
       },
       discovery: { on: discoveryOn(state), until: state.discoveryUntil },
       rooms,

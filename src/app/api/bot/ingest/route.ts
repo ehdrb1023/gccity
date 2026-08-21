@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { checkIngestToken } from '@/server/token';
-import { touchHeartbeat } from '@/server/state';
+import { botNoteFrom, touchHeartbeat } from '@/server/state';
 import { ingestBatch, type IncomingMsg, type IncomingSeen } from '@/server/ingest';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   const seen = (Array.isArray(body.seen) ? body.seen : []).slice(0, MAX_SEEN) as IncomingSeen[];
 
   try {
-    await touchHeartbeat();
+    await touchHeartbeat(botNoteFrom(req));
     const result = await ingestBatch(msgs, seen);
 
     // 시각을 못 얻은 메시지 비율. 높으면 봇의 시각 추출부터 고쳐야 한다
