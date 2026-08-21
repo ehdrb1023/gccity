@@ -71,7 +71,7 @@ var BUILD = '2026-08-21-sender2';
 var CONFIG_ENDPOINT = 'https://gccity.vercel.app/api/bot/config';
 var INGEST_ENDPOINT = 'https://gccity.vercel.app/api/bot/ingest';
 var PHOTO_ENDPOINT  = 'https://gccity.vercel.app/api/bot/photo';
-var TOKEN = '35879874352e279349044e92f29a1a1b2efba2f7125d6db67db3e3a96d8c65a9';   // 서버 env GCCITY_INGEST_TOKEN 과 같은 값
+var TOKEN = '<GCCITY_INGEST_TOKEN>';   // 서버 env GCCITY_INGEST_TOKEN 과 같은 값. ★ 채운 채로 커밋하지 말 것
 
 // ── 2. 동작 옵션 ──────────────────────────────────────────────
 
