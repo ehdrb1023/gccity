@@ -8,7 +8,11 @@ import { AUTH_COOKIE, isAuthed } from '@/lib/auth';
  * 실패한다. 봇 로그에는 "POST 200" 만 남고 DB 는 안 늘고 화면은 멀쩡하다.
  * 이 프로젝트가 제일 경계하는 실패 모양이다.
  */
-const PUBLIC_PATHS = ['/api/bot/', '/login', '/api/login'];
+/*
+ * /api/cron/ 도 쿠키가 없다(Vercel Cron 이 부른다). 그쪽은 라우트가 CRON_SECRET 을
+ * 직접 검사한다 — 여기서 빼면 로그인 화면 HTML 을 받고 자동 수집이 조용히 멈춘다.
+ */
+const PUBLIC_PATHS = ['/api/bot/', '/api/cron/', '/login', '/api/login'];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

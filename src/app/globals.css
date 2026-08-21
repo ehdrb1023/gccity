@@ -277,3 +277,102 @@ input { font: inherit; }
 .fmeta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .fname { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fsub { font-size: 11.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 채널ID 로 방 등록 ───────────────────────────────────── */
+.addroom { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.addroom-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.addroom input {
+  flex: 1 1 220px; min-width: 0; padding: 9px 11px; border: 1px solid var(--line);
+  border-radius: 9px; background: var(--bg); color: var(--ink);
+}
+.addroom input:focus { outline: none; border-color: var(--accent); }
+.addroom input.mono { flex: 1 1 260px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px; }
+.addroom p { margin: 8px 2px 0; font-size: 12px; color: var(--ink-3); }
+.addroom p b { color: var(--ink-2); font-family: ui-monospace, monospace; }
+
+.room-meta .mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11.5px; }
+
+/* ── 첨부 말풍선 ─────────────────────────────────────────── */
+.bubble.photo { padding: 4px; overflow: hidden; }
+.bubble.photo img {
+  display: block; max-width: 100%; max-height: 420px; border-radius: 10px; object-fit: contain;
+}
+.bubble.photo .cap { display: block; padding: 6px 6px 4px; font-size: 13px; }
+
+.bubble.att { display: flex; flex-direction: column; gap: 2px; }
+.bubble.att b { font-size: 13.5px; font-weight: 600; }
+.bubble.att small { font-size: 11.5px; color: #5b6672; }
+.bubble.att .cap { margin-top: 4px; font-size: 13px; }
+.bubble.att.missing { background: color-mix(in srgb, var(--warn) 16%, #fff); }
+
+/* ── 민원실 ─────────────────────────────────────────── */
+
+/*
+ * 말풍선 옆 [민원] 버튼. 평소에는 보이지 않다가 그 줄에 마우스가 올라오면 나타난다 —
+ * 줄마다 버튼이 상시로 떠 있으면 대화 화면이 버튼 목록이 된다.
+ * 담은 뒤에는 계속 보인다. 눌렀는지 아닌지가 화면에 없으면 같은 말을 또 담으려 든다.
+ */
+.clip {
+  flex: none; align-self: flex-end; margin-bottom: 1px;
+  border: 0; background: rgba(0, 0, 0, .16); color: #f4f6f8;
+  border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700;
+  opacity: 0; transition: opacity .12s;
+}
+.kmsg:hover .clip, .clip:focus-visible { opacity: 1; }
+.clip[data-done='true'] { opacity: 1; background: var(--ok); color: #fff; }
+
+.civic-panel { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.civic-panel p { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); line-height: 1.6; }
+.civic-panel p.dim { color: var(--ink-3); margin: 10px 0 0; }
+.civic-panel code {
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 5px;
+}
+.civic-panel input, .civic-panel textarea {
+  flex: 1 1 220px; min-width: 0; width: 100%; padding: 9px 11px; margin-bottom: 8px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink);
+  font-family: inherit; font-size: 13.5px;
+}
+.civic-panel textarea { resize: vertical; line-height: 1.5; }
+.civic-panel .mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12.5px; }
+.civic-panel input:focus, .civic-panel textarea:focus { outline: none; border-color: var(--accent); }
+.civic-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+.civic-row .btn { flex: none; }
+
+.civic-search {
+  flex: 1 1 160px; min-width: 120px; margin-left: auto;
+  padding: 4px 11px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--bg); color: var(--ink); font-size: 12.5px;
+}
+.civic-search:focus { outline: none; border-color: var(--accent); }
+
+/* 목록은 게시판을 그대로 옮긴 모양이다 — 제목이 먼저 읽히고 나머지는 아래 한 줄. */
+.civics, .srcs { list-style: none; margin: 0; padding: 0 0 8px; }
+.civics li, .srcs li {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 16px; border-top: 1px solid var(--line);
+}
+.civics li:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.srcs li { padding: 10px 0; }
+
+/* 상태는 목록에서 바로 바꾼다. 민원 하나를 열어 들어가는 화면이 따로 없다 */
+.cstat {
+  flex: none; margin-top: 1px; padding: 3px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink-2);
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
+}
+.cstat.s-new { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border-color: transparent; }
+.cstat.s-doing { background: color-mix(in srgb, var(--warn) 18%, transparent); color: #e8590c; border-color: transparent; }
+.cstat.s-done { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); border-color: transparent; }
+.cstat.s-drop { color: var(--ink-3); }
+
+.cmeta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ctitle { font-size: 14px; font-weight: 600; overflow-wrap: break-word; }
+.ctitle a { color: inherit; text-decoration: none; }
+.ctitle a:hover { text-decoration: underline; text-decoration-color: var(--accent); }
+.csub { font-size: 11.5px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbody {
+  font-size: 12.5px; color: var(--ink-2); margin-top: 3px;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cnote { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
