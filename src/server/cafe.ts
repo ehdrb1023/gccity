@@ -213,6 +213,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
         url: (post as any).url || null,
         board: '과천 카페',
         department: parsed.department,
+        agency: parsed.agency,
         due_at: parsed.dueAt,
         // 본문의 첫 시각 마커가 접수, 마지막이 회신이다. 없으면 비운다 — 지어내지 않는다
         posted_at: parsed.receivedAt,

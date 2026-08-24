@@ -241,6 +241,7 @@ export async function runDigest(opts: { hours?: number; now?: number } = {}): Pr
           reported_at: normalizeKind(it.kind) === 'report' ? anchor.sent_at : null,
           resolved_at: normalizeKind(it.kind) === 'resolution' ? anchor.sent_at : null,
           department: parsed.department,
+          agency: parsed.agency,
           // "…까지" 약속이 있으면 회신은 왔어도 아직 끝난 건이 아니다
           due_at: parsed.dueAt,
           room_id: anchor.room_id,

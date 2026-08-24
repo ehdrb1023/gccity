@@ -56,7 +56,10 @@ export type Complaint = {
   resolvedAt: string | null;
   resolutionOf: string | null;
   summary: string | null;
+  /** 배분 부서 — 시청 안에서 맡은 곳 */
   department: string | null;
+  /** 회신 기관 — 시청 밖에서 답을 준 곳. 부서와 섞지 않는다 */
+  agency: string | null;
   dueAt: string | null;
   /** 모델이 넣은 초안. 사람이 확정하기 전까지 배지가 붙는다 */
   aiDraft: boolean;
@@ -283,7 +286,7 @@ export function parsePastedList(text: string, now = Date.now()): ComplaintDraft[
 
 const SELECT =
   'id, origin, title, url, author, board, posted_at, body, category, status, note, room_id, message_id, created_at, ' +
-  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, due_at, ai_draft, ai_note, cafe_post_id';
+  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, agency, due_at, ai_draft, ai_note, cafe_post_id';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toComplaint(r: any): Complaint {
@@ -309,6 +312,7 @@ function toComplaint(r: any): Complaint {
     resolutionOf: r.resolution_of ?? null,
     summary: r.summary ?? null,
     department: r.department ?? null,
+    agency: r.agency ?? null,
     dueAt: r.due_at ?? null,
     aiDraft: Boolean(r.ai_draft),
     aiNote: r.ai_note ?? null,
@@ -457,7 +461,7 @@ export async function clipMessage(messageId: number): Promise<void> {
    *   카톡 답변에는 카페 글의 시각 마커가 없으므로 회신 시각은 메시지 시각을 쓴다.
    */
   const parsed = parseResolutionBody(body);
-  const looksLikeReply = Boolean(parsed.department) || /회신을?\s*받았습니다|답변\s*(입니다|드립니다)/.test(body);
+  const looksLikeReply = Boolean(parsed.department || parsed.agency) || /회신을?\s*받았습니다|답변\s*(입니다|드립니다)/.test(body);
 
   const { error: insErr } = await db()
     .from('complaints')
@@ -471,6 +475,7 @@ export async function clipMessage(messageId: number): Promise<void> {
         board: board.slice(0, 120),
         posted_at: (m as any).sent_at,
         department: parsed.department,
+        agency: parsed.agency,
         due_at: parsed.dueAt,
         kind: looksLikeReply ? 'resolution' : 'report',
         resolved_at: looksLikeReply ? (m as any).sent_at : null,
@@ -715,6 +720,7 @@ export async function attachBody(id: string, body: string): Promise<{ parsed: Re
   if (parsed.receivedAt) patch.reported_at = parsed.receivedAt;
   if (parsed.repliedAt) patch.resolved_at = parsed.repliedAt;
   if (parsed.department) patch.department = parsed.department;
+  if (parsed.agency) patch.agency = parsed.agency;
   if (parsed.dueAt) patch.due_at = parsed.dueAt;
 
   const { error: uErr } = await db().from('complaints').update(patch).eq('id', id);

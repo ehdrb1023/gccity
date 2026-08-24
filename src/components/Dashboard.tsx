@@ -993,6 +993,7 @@ type Complaint = {
   resolutionOf: string | null;
   summary: string | null;
   department: string | null;
+  agency: string | null;
   dueAt: string | null;
   aiDraft: boolean;
   aiNote: string | null;
@@ -1642,8 +1643,12 @@ function CivicLine({
   return (
     <li data-kind={c.kind} data-open={open}>
       <button className="civic-line" onClick={onToggle}>
-        <span className={`cdept ${c.department ? '' : 'none'}`}>
-          {c.department ?? (c.kind === 'report' ? '배분 전' : '—')}
+        {/*
+          ★ 부서 칸에 외부 기관을 그냥 적지 않는다. 시청 과·팀과 한 줄에 섞이면
+            "어느 과로 가나" 를 눈으로 세는 순간 답이 틀어진다. 넘긴 건은 넘겼다고 적는다.
+        */}
+        <span className={`cdept ${c.department ? '' : c.agency ? 'ext' : 'none'}`}>
+          {c.department ?? (c.agency ? `외부 · ${c.agency}` : c.kind === 'report' ? '배분 전' : '—')}
         </span>
         <span className="cline-title">
           {c.aiDraft && <span className="aibadge">AI 초안</span>}
@@ -1736,12 +1741,18 @@ function CivicDetail({
           )}
         </span>
         {/* 접수 → 회신. 처리 글은 제목 날짜가 접수일이라 짝짓기 없이도 잡힌다 */}
-        {(leadLabel(c.reportedAt, c.resolvedAt) || c.department) && (
+        {(leadLabel(c.reportedAt, c.resolvedAt) || c.department || c.agency) && (
           <span className="clead">
-            {leadLabel(c.reportedAt, c.resolvedAt)}
-            {c.department && `${leadLabel(c.reportedAt, c.resolvedAt) ? ' · ' : ''}${c.department}`}
-            {/* ★ 회신이 왔어도 "…까지" 약속이 남아 있으면 끝난 게 아니다 */}
-            {c.dueAt && ` · ⏳ ${new Date(c.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정`}
+            {[
+              leadLabel(c.reportedAt, c.resolvedAt),
+              c.department && `배분 ${c.department}`,
+              // 시청 밖에서 답이 온 건. 부서와 나란히 두되 이름표로 갈라 적는다
+              c.agency && `회신 ${c.agency}`,
+              // ★ 회신이 왔어도 "…까지" 약속이 남아 있으면 끝난 게 아니다
+              c.dueAt && `⏳ ${new Date(c.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </span>
         )}
 

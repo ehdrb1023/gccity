@@ -146,7 +146,7 @@ describe('parseResolutionBody — 실측 본문 한 건', () => {
 
   it('형식이 다른 본문에서는 아무것도 지어내지 않는다', () => {
     const p = parseResolutionBody('민원 잘 처리했습니다. 감사합니다.');
-    expect([p.receivedAt, p.repliedAt, p.department, p.dueAt]).toEqual([null, null, null, null]);
+    expect([p.receivedAt, p.repliedAt, p.department, p.agency, p.dueAt]).toEqual([null, null, null, null, null]);
   });
 });
 
@@ -183,10 +183,24 @@ describe('parseResolutionBody — 부서가 여럿인 답변', () => {
 
 /** 실측 카톡 #162 (2026-08-22) — 처리 주체가 시청 밖이라 "담당 기관" 으로 온다. */
 describe('parseResolutionBody — 외부 기관으로 넘어간 건', () => {
-  it('★ "담당 기관인" 도 받는다 — 시청 밖으로 넘긴 건이 통계에서 빠지면 안 된다', () => {
+  const CRANE =
+    '본 민원을 과천시청 당직실에서 담당 기관인 넷마블 공사 관계자에게 문의한 결과 크레인 특성상 철물이 없을 시 붕괴 위험이 있어 부득이하게 매달아 놓았다 라는 회신을 받았습니다.';
+
+  it('★ 배분 부서와 회신 기관을 가른다 — 한 칸에 담으면 부서별 집계가 섞인다', () => {
+    const p = parseResolutionBody(CRANE);
+    expect(p.department).toBe('과천시청 당직실');   // 시청 안에서 맡은 곳
+    expect(p.agency).toBe('넷마블 공사 관계자');     // 시청 밖에서 답을 준 곳
+  });
+
+  it('앞머리("본 민원을")를 부서명으로 딸려 오지 않게 한다', () => {
+    expect(parseResolutionBody(CRANE).department).not.toMatch(/민원/);
+  });
+
+  it('시청 안에서 끝난 건은 회신 기관이 비어 있다 — 없는 값을 지어내지 않는다', () => {
     const p = parseResolutionBody(
-      '본 민원을 과천시청 당직실에서 담당 기관인 넷마블 공사 관계자에게 문의한 결과 크레인 특성상 철물이 없을 시 붕괴 위험이 있어 부득이하게 매달아 놓았다 라는 회신을 받았습니다.',
+      '본 민원의 담당 부서인 과천시청 공원녹지과 하천관리팀에서 현장 출동하여 점검한 결과 오수관이 범람하였습니다.',
     );
-    expect(p.department).toBe('넷마블 공사 관계자');
+    expect(p.department).toBe('과천시청 공원녹지과 하천관리팀');
+    expect(p.agency).toBeNull();
   });
 });

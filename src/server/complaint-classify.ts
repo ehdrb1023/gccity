@@ -192,8 +192,19 @@ export type ParsedBody = {
   receivedAt: string | null;
   /** 본문 마커 중 마지막 — 부서 회신이 붙은 시각. 마커가 하나뿐이면 null */
   repliedAt: string | null;
-  /** 담당 부서. "담당 부서인 X에 문의한 결과" 꼴에서 뽑는다 */
+  /**
+   * 배분 부서 — **시청 안**에서 이 민원을 맡은 곳. "담당 부서인 X에 문의한 결과" 꼴이거나,
+   * 외부로 넘긴 건이면 "X에서 담당 기관인 …에게" 의 X 다.
+   */
   department: string | null;
+  /**
+   * 회신 기관 — **시청 밖**에서 답을 준 곳(시공사·공기업 등). "담당 기관인 Y에게" 꼴이다.
+   *
+   * ★ 부서와 한 칸에 담지 말 것. 부서별 집계를 낼 때 시청 과·팀과 외부 기관이 한 줄에
+   *   섞이면 사과와 오렌지를 함께 세게 된다. "우리가 처리한 것 / 남에게 넘긴 것" 을
+   *   가르는 것 자체가 이 앱이 보려는 숫자다.
+   */
+  agency: string | null;
   /** "…까지" 로 약속된 조치 완료 예정일. 있으면 아직 안 끝난 건이다 */
   dueAt: string | null;
   /** 뽑아낸 시각 마커 전부(디버깅·표시용) */
@@ -204,17 +215,29 @@ const BODY_MARK =
   /^\s*[-–—]\s*(20\d\d)\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:\(\s*[월화수목금토일]\s*\))?\s*(오전|오후)?\s*(\d{1,2})\s*시\s*(\d{1,2})?\s*분?\s*[-–—]\s*$/gm;
 
 /*
- * "담당 부서인 X에 문의한 결과" · "담당 부서인 X에서 현장 출동하여 점검한 결과" 둘 다 받는다.
+ * 회신문은 세 꼴로 온다. **부서**와 **기관**을 가르는 것이 이 세 줄의 전부다.
+ *
+ *   ① 담당 **부서**인 〈과천시청 공원녹지과 하천관리팀〉에서 현장 출동하여…   → 부서
+ *   ② 담당 **부서**인 〈…도시조성1팀과 기획홍보담당관 기획팀〉에 문의한 결과…  → 부서
+ *   ③ 본 민원을 〈과천시청 당직실〉에서 담당 **기관**인 〈넷마블 공사 관계자〉에게…
+ *                    └ 부서(배분)                    └ 기관(회신)
+ *
  * 조사(에서·에게·에·으로) 뒤에 **공백**이 오는 자리에서 끊는다 — 부서명 안의 '과'·'관' 을
  * 조사로 오인하지 않으려는 것이다(과천시청 도시조성과 도시조성1팀…).
- *
- * ★ **부서**만이 아니라 **기관**도 받는다. 처리 주체가 시청 밖일 때 문구가 바뀐다 —
- *   실측 2026-08-22: "담당 **기관**인 넷마블 공사 관계자에게 문의한 결과". 민원을 어디로
- *   보냈는가가 이 앱이 재려는 값이라, 외부 기관으로 넘어간 건을 빈칸으로 두면 그 흐름이
- *   통계에서 통째로 빠진다.
  */
 const DEPARTMENT =
-  /담당\s*(?:부서|기관)(?:인|는|:)?\s*([가-힣A-Za-z0-9·\s]{2,60}?)\s*(?:에서|에게|에|으로|이)\s+/;
+  /담당\s*부서(?:인|는|:)?\s*([가-힣A-Za-z0-9·\s]{2,60}?)\s*(?:에서|에게|에|으로|이)\s+/;
+
+/** ③ 의 뒤쪽 — 시청 밖에서 답을 준 곳. */
+const AGENCY =
+  /담당\s*기관(?:인|는|:)?\s*([가-힣A-Za-z0-9·\s]{2,60}?)\s*(?:에서|에게|에|으로|이)\s+/;
+
+/*
+ * ③ 의 앞쪽 — 외부로 넘긴 **시청 부서**. 조직 꼬리(과·팀·실·담당관…)로 끝나는 것만 잡는다.
+ * 그러지 않으면 "본 민원을" 같은 앞머리까지 부서명으로 딸려 온다.
+ */
+const VIA_DEPARTMENT =
+  /((?:과천시청\s*)?[가-힣A-Za-z0-9]{2,15}(?:과|팀|실|담당관|사업소|본부|센터))\s*에서\s+담당\s*기관/;
 
 const DUE_DATE =
   /(20\d\d)\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:\(\s*[월화수목금토일]\s*\))?\s*까지/;
@@ -228,7 +251,9 @@ function isoKstAt(y: number, mo: number, d: number, h = 0, mi = 0): string | nul
 
 export function parseResolutionBody(body: string): ParsedBody {
   const text = String(body ?? '');
-  const out: ParsedBody = { receivedAt: null, repliedAt: null, department: null, dueAt: null, marks: [] };
+  const out: ParsedBody = {
+    receivedAt: null, repliedAt: null, department: null, agency: null, dueAt: null, marks: [],
+  };
 
   BODY_MARK.lastIndex = 0;
   for (let m = BODY_MARK.exec(text); m; m = BODY_MARK.exec(text)) {
@@ -243,8 +268,18 @@ export function parseResolutionBody(body: string): ParsedBody {
   // 마커가 하나뿐이면 접수만 적힌 글이다. 그걸 회신으로 세면 소요 0일이 되어버린다
   if (out.marks.length > 1) out.repliedAt = out.marks[out.marks.length - 1];
 
+  const clean = (v: string) => v.replace(/\s+/g, ' ').trim().slice(0, 60) || null;
+
   const dept = DEPARTMENT.exec(text);
-  if (dept) out.department = dept[1].replace(/\s+/g, ' ').trim().slice(0, 60) || null;
+  if (dept) out.department = clean(dept[1]);
+
+  const agency = AGENCY.exec(text);
+  if (agency) {
+    out.agency = clean(agency[1]);
+    // 외부로 넘긴 건이면 배분 부서는 그 앞에 적힌 시청 조직이다
+    const via = VIA_DEPARTMENT.exec(text);
+    if (via && !out.department) out.department = clean(via[1]);
+  }
 
   const due = DUE_DATE.exec(text);
   if (due) out.dueAt = isoKstAt(+due[1], +due[2], +due[3]);
