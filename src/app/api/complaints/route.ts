@@ -241,6 +241,8 @@ export async function POST(req: Request) {
           title: String(body.title ?? ''),
           url: String(body.url ?? ''),
           postedAt: String(body.postedAt ?? ''),
+          reply: String(body.reply ?? ''),
+          replyPostedAt: String(body.replyPostedAt ?? ''),
           body: String(body.body ?? ''),
         });
         if (duplicate) {

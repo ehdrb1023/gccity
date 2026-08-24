@@ -1110,6 +1110,8 @@ type CafePost = {
   url: string | null;
   body: string;
   postedAt: string | null;
+  reply: string | null;
+  replyPostedAt: string | null;
   createdAt: string;
   summarizedAt: string | null;
   ok: boolean | null;
@@ -2037,11 +2039,18 @@ function CafeBox({
    */
   const [postedAt, setPostedAt] = useState('');
   const [body, setBody] = useState('');
+  /*
+   * 정책관이 **댓글로** 회신하는 글이 있다. 본문 칸에 몰아 넣으면 모델이 한 건으로 뭉개서
+   * 민원이 통째로 사라진다. 칸을 가르면 "본문=민원, 댓글=회신" 이라는 구조를 사람이
+   * 알려주는 셈이라 모델이 추측할 일이 없고, 그 둘이 그 자리에서 이어진다.
+   */
+  const [reply, setReply] = useState('');
+  const [replyPostedAt, setReplyPostedAt] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
 
   const submit = async () => {
     onMsg('저장하고 요약하는 중… (수십 초 걸릴 수 있다)');
-    const json = await act({ action: 'cafe-add', title, url, postedAt, body });
+    const json = await act({ action: 'cafe-add', title, url, postedAt, body, reply, replyPostedAt });
     if (!json) {
       onMsg(null);
       return;
@@ -2053,15 +2062,21 @@ function CafeBox({
     }
     setTitle('');
     setUrl('');
-    setBody('');   // 작성일은 남긴다 — 같은 날 글을 여러 건 이어 넣는 일이 많다
-    const s = json.summary as { ok: boolean; drafted: number; added: number; error: string | null } | null;
+    setBody('');
+    setReply('');   // 작성일 두 칸은 남긴다 — 같은 날 글을 여러 건 이어 넣는 일이 많다
+    const s = json.summary as
+      | { ok: boolean; drafted: number; added: number; linked: boolean; error: string | null }
+      | null;
     if (s?.error) {
       // 본문은 저장됐다는 것을 분명히 말한다. 사람이 다시 복사하지 않아도 된다
       onMsg(`본문은 저장했지만 요약이 실패했다 — ${s.error}. 아래 [다시 요약] 으로 재시도할 수 있다`);
       await reload();
       return;
     }
-    onMsg(`저장하고 ${s?.added ?? 0}건을 AI 초안으로 올렸다`);
+    onMsg(
+      `저장하고 ${s?.added ?? 0}건을 AI 초안으로 올렸다` +
+        (s?.linked ? ' — 본문 민원과 댓글 회신을 이어 붙였다' : ''),
+    );
     await reload();
     if ((s?.added ?? 0) > 0) onDone();
   };
@@ -2083,15 +2098,40 @@ function CafeBox({
         </label>
         <textarea
           value={body}
-          rows={10}
+          rows={9}
           placeholder="글 본문을 통째로 붙여넣기 (Ctrl+A → Ctrl+C)"
           onChange={(e) => setBody(e.target.value)}
         />
+
+        {/*
+          ★ 댓글 회신은 본문 칸에 섞지 말 것. 섞으면 모델이 한 건으로 뭉개 민원이 사라진다.
+            여기 넣으면 민원 한 건 + 회신 한 건이 되고 그 자리에서 이어진다.
+        */}
+        <p className="dim">
+          정책관이 <b>댓글로</b> 회신한 글이면 아래에 그 댓글만 따로 넣을 것. 본문에 섞으면
+          한 건으로 뭉개진다. 넣으면 <b>민원 + 해결</b> 로 갈라 담고 그 자리에서 이어 붙인다.
+        </p>
+        <textarea
+          value={reply}
+          rows={5}
+          placeholder="정책관·담당자의 댓글 회신 (없으면 비워둘 것)"
+          onChange={(e) => setReply(e.target.value)}
+        />
+        {reply.trim() && (
+          <label className="civic-field">
+            <span>댓글 작성일</span>
+            <input type="date" value={replyPostedAt} onChange={(e) => setReplyPostedAt(e.target.value)} />
+            <em>이 날짜가 회신일이 된다 — 작성일과의 차이가 곧 처리 소요일이다</em>
+          </label>
+        )}
+
         <div className="civic-row">
           <button className="btn primary" disabled={busy || body.trim().length < 20} onClick={() => void submit()}>
             저장하고 요약
           </button>
-          <span className="dim">{body.trim().length}자</span>
+          <span className="dim">
+            본문 {body.trim().length}자{reply.trim() && ` · 댓글 ${reply.trim().length}자`}
+          </span>
         </div>
       </div>
 
@@ -2117,7 +2157,7 @@ function CafeBox({
                 <span className="csub">
                   {p.postedAt ? `작성 ${dayLabel(p.postedAt)}` : `담은 날 ${dayLabel(p.createdAt)} · ⚠️ 작성일 없음`}
                   {' · '}
-                  {p.body.length}자
+                  {p.body.length}자{p.reply ? ` · 댓글 ${p.reply.length}자` : ''}
                   {/* ★ 실패를 숨기지 않는다. 0건인 것과 안 돌아간 것은 겉보기가 같다 */}
                   {p.summarizedAt == null
                     ? ' · 아직 요약 안 함'
