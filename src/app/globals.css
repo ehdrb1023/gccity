@@ -575,6 +575,28 @@ input { font: inherit; }
   background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok);
 }
 .civic-fix { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+/*
+ * 줄 안에서 여는 글 상자. ★ 버튼과 붙어 있어야 한다 — 화면 맨 위 한 자리에서 열면
+ * 목록 아래쪽에서 누른 사람에게는 스크롤 밖이라 아무 일도 안 일어난 것처럼 보인다.
+ */
+.rowbox {
+  margin-top: 10px; padding: 12px; border-radius: 10px;
+  border: 1px solid var(--accent); background: var(--bg);
+}
+.rowbox > p { margin: 0 0 8px; font-size: 12.5px; line-height: 1.6; color: var(--ink-2); }
+.rowbox textarea, .rowbox input {
+  width: 100%; padding: 9px 11px; margin-bottom: 8px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink);
+  font-family: inherit; font-size: 13.5px;
+}
+.rowbox textarea { resize: vertical; line-height: 1.5; }
+.rowbox textarea:focus, .rowbox input:focus { outline: none; border-color: var(--accent); }
+.rowbox code {
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 5px;
+}
+.rowbox .civic-field input { width: auto; margin-bottom: 0; }
+
 .civic-fixlink {
   display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px;
   border-top: 1px dashed var(--line); font-size: 11.5px; color: var(--ink-3);

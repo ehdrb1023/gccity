@@ -1157,13 +1157,6 @@ function Complaints() {
   const [kind, setKind] = useState<'all' | PostKind>('all');
   /** 잇기 중인 처리 글. 골라두면 민원 줄에 [여기에 잇기] 가 뜬다 */
   const [linking, setLinking] = useState<Complaint | null>(null);
-  /** 본문을 붙이는 중인 민원. 카페는 서버가 못 읽으니 사람이 열어 복사해 넣는다 */
-  const [bodyFor, setBodyFor] = useState<Complaint | null>(null);
-  const [bodyText, setBodyText] = useState('');
-  /** 해결 내용을 적는 중인 민원. 부서가 정해지는 유일한 자리다 */
-  const [fixFor, setFixFor] = useState<Complaint | null>(null);
-  const [fixText, setFixText] = useState('');
-  const [fixAt, setFixAt] = useState('');
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -1302,7 +1295,7 @@ function Complaints() {
   const chatDrafts = drafts.filter((c) => c.origin === 'chat');
   const cafeDrafts = drafts.filter((c) => c.origin !== 'chat');
 
-  const rowProps = { busy, act, after, linking, setLinking, setBodyFor, setBodyText, setFixFor, setFixText, setFixAt };
+  const rowProps = { busy, act, after, linking, setLinking, onMsg: setMsg };
 
   return (
     <section className="panel">
@@ -1533,109 +1526,6 @@ function Complaints() {
         </div>
       )}
 
-      {/*
-        해결 내용 상자. ★ 이 앱에서 **부서가 정해지는 유일한 자리**다 —
-        저장하는 순간 담당 부서·회신 기관·완료 예정일·회신 시각을 이 글에서 규칙이 뽑는다.
-        무엇이 채워졌는지 그 자리에서 알려준다. 조용히 성공하지 않는다.
-      */}
-      {fixFor && (
-        <div className="civic-panel">
-          <p>
-            <b>{fixFor.title.slice(0, 50)}</b> 이 어떻게 처리됐는지 적는다. 담당자 회신문을
-            그대로 붙여넣으면 <b>담당 부서 · 회신 기관 · 완료 예정일 · 회신 시각</b>을 그 자리에서
-            뽑는다. 비워서 저장하면 해결 내용과 거기서 나온 값이 함께 지워지고 <b>확인 중</b>으로 돌아간다.
-          </p>
-          <textarea
-            value={fixText}
-            rows={7}
-            placeholder="담당자 회신문을 그대로 붙여넣기 (예: 본 민원의 담당 부서인 과천시청 공원녹지과 하천관리팀에서 …)"
-            onChange={(e) => setFixText(e.target.value)}
-          />
-          <label className="civic-field">
-            <span>회신일</span>
-            <input type="date" value={fixAt} onChange={(e) => setFixAt(e.target.value)} />
-            <em>본문에 시각 마커가 있으면 그게 이긴다. 둘 다 없으면 소요일이 안 나온다</em>
-          </label>
-          <div className="civic-row">
-            <button
-              className="btn primary"
-              disabled={busy}
-              onClick={async () => {
-                const json = await act({ action: 'resolution', id: fixFor.id, text: fixText, at: fixAt });
-                if (json) {
-                  const p = json.parsed ?? {};
-                  setMsg(
-                    fixText.trim()
-                      ? [
-                          p.department ? `부서 ${p.department}` : '⚠️ 담당 부서를 못 찾았다',
-                          p.agency ? `회신 기관 ${p.agency}` : null,
-                          p.resolvedAt ? `회신 ${new Date(p.resolvedAt).toLocaleDateString('ko-KR')}` : '⚠️ 회신 시각 없음',
-                          p.dueAt ? `⏳ ${new Date(p.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정 — 아직 안 끝났다` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')
-                      : '해결 내용을 지웠다',
-                  );
-                  setFixFor(null);
-                  setFixText('');
-                  await reload(status, q, kind);
-                }
-              }}
-            >
-              해결 내용 저장
-            </button>
-            <button className="btn ghost" onClick={() => { setFixFor(null); setFixText(''); }}>
-              그만두기
-            </button>
-          </div>
-        </div>
-      )}
-
-      {bodyFor && (
-        <div className="civic-panel">
-          <p>
-            <b>{bodyFor.title.slice(0, 50)}</b> 의 본문을 붙여넣으면 접수·회신 시각(분 단위) · 담당 부서 ·
-            <code>…까지</code> 약속을 그 자리에서 뽑는다. <b>카페 글을 열어 Ctrl+A → Ctrl+C</b> 하면 된다.
-          </p>
-          <textarea
-            value={bodyText}
-            rows={8}
-            placeholder="글 본문을 통째로 붙여넣기"
-            onChange={(e) => setBodyText(e.target.value)}
-          />
-          <div className="civic-row">
-            <button
-              className="btn primary"
-              disabled={busy || !bodyText.trim()}
-              onClick={async () => {
-                const json = await act({ action: 'body', id: bodyFor.id, body: bodyText });
-                if (json) {
-                  const p = json.parsed ?? {};
-                  setMsg(
-                    [
-                      p.receivedAt ? `접수 ${new Date(p.receivedAt).toLocaleString('ko-KR')}` : '접수 시각 못 찾음',
-                      p.repliedAt ? `회신 ${new Date(p.repliedAt).toLocaleString('ko-KR')}` : '회신 시각 못 찾음',
-                      p.department ? `부서 ${p.department}` : null,
-                      p.dueAt ? `⚠️ ${new Date(p.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정 — 아직 안 끝났다` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' · '),
-                  );
-                  setBodyFor(null);
-                  setBodyText('');
-                  await reload(status, q, kind);
-                }
-              }}
-            >
-              본문 저장
-            </button>
-            <button className="btn ghost" onClick={() => { setBodyFor(null); setBodyText(''); }}>
-              그만두기
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="civic-board">
         {/* 왼쪽 보드 — 일이 흘러가는 차례대로 위에서 아래로 놓는다 */}
         <nav className="civic-nav">
@@ -1802,11 +1692,7 @@ type RowProps = {
   after: (json: Record<string, any> | null, note?: string) => Promise<void>;
   linking: Complaint | null;
   setLinking: (c: Complaint | null) => void;
-  setBodyFor: (c: Complaint | null) => void;
-  setBodyText: (s: string) => void;
-  setFixFor: (c: Complaint | null) => void;
-  setFixText: (s: string) => void;
-  setFixAt: (s: string) => void;
+  onMsg: (m: string | null) => void;
 };
 
 /**
@@ -1900,12 +1786,18 @@ function CivicDetail({
   after,
   linking,
   setLinking,
-  setBodyFor,
-  setBodyText,
-  setFixFor,
-  setFixText,
-  setFixAt,
+  onMsg,
 }: { c: Complaint } & RowProps) {
+  /*
+   * ★ 글 상자는 **그 줄 안에서** 연다. 예전에는 화면 맨 위 한 자리에서 열렸는데,
+   *   목록 아래쪽 민원에서 버튼을 누르면 상자가 스크롤 밖에 뜨고 화면은 아무 반응이
+   *   없어 보였다. 버튼과 상자가 떨어져 있으면 안 된다.
+   */
+  const [editing, setEditing] = useState<'none' | 'fix' | 'body'>('none');
+  const [text, setText] = useState('');
+  const [at, setAt] = useState('');
+  const close = () => { setEditing('none'); setText(''); };
+
   return (
     /*
      * ★ 두 줄로 못 박는다 — 내용 줄과 버튼 줄. 한 줄에 몰아넣으면 버튼이 제 너비를
@@ -2063,9 +1955,10 @@ function CivicDetail({
           disabled={busy}
           title="이 민원이 어떻게 처리됐는지 적는다 — 부서·기관·예정일을 그 글에서 뽑는다"
           onClick={() => {
-            setFixFor(c);
-            setFixText(c.resolutionText ?? '');
-            setFixAt(c.resolvedAt ? c.resolvedAt.slice(0, 10) : '');
+            if (editing === 'fix') return close();
+            setEditing('fix');
+            setText(c.resolutionText ?? '');
+            setAt(c.resolvedAt ? c.resolvedAt.slice(0, 10) : '');
           }}
         >
           해결 내용{c.resolutionText ? ' ✓' : ''}
@@ -2076,8 +1969,9 @@ function CivicDetail({
         disabled={busy}
         title="글 본문을 붙여넣어 시각·부서·예정일을 뽑는다"
         onClick={() => {
-          setBodyFor(c);
-          setBodyText(c.body ?? '');
+          if (editing === 'body') return close();
+          setEditing('body');
+          setText(c.body ?? '');
         }}
       >
         본문{c.body ? ' ✓' : ''}
@@ -2115,6 +2009,111 @@ function CivicDetail({
         지우기
       </button>
       </div>
+
+      {/*
+        ★ 이 앱에서 **부서가 정해지는 유일한 자리**다. 저장하는 순간 담당 부서 · 회신 기관 ·
+          완료 예정일 · 회신 시각을 이 글에서 규칙이 뽑아 채우고, 무엇이 채워졌는지
+          그 자리에서 알려준다. 조용히 성공하지 않는다.
+      */}
+      {editing === 'fix' && (
+        <div className="rowbox">
+          <p>
+            이 민원이 <b>어떻게 처리됐는지</b> 적는다. 담당자 회신문을 그대로 붙여넣으면{' '}
+            <b>담당 부서 · 회신 기관 · 완료 예정일 · 회신 시각</b>을 그 자리에서 뽑는다.
+            비워서 저장하면 해결 내용과 거기서 나온 값이 함께 지워지고 <b>확인 중</b>으로 돌아간다.
+          </p>
+          <textarea
+            value={text}
+            rows={6}
+            autoFocus
+            placeholder="담당자 회신문을 그대로 붙여넣기 (예: 본 민원의 담당 부서인 과천시청 공원녹지과 하천관리팀에서 …)"
+            onChange={(e) => setText(e.target.value)}
+          />
+          <label className="civic-field">
+            <span>회신일</span>
+            <input type="date" value={at} onChange={(e) => setAt(e.target.value)} />
+            <em>본문에 시각 마커가 있으면 그게 이긴다. 둘 다 없으면 소요일이 안 나온다</em>
+          </label>
+          <div className="civic-row">
+            <button
+              className="btn primary"
+              disabled={busy}
+              onClick={async () => {
+                const json = await act({ action: 'resolution', id: c.id, text, at });
+                if (!json) return;
+                const p = json.parsed ?? {};
+                onMsg(
+                  text.trim()
+                    ? [
+                        p.department ? `부서 ${p.department}` : '⚠️ 담당 부서를 못 찾았다',
+                        p.agency ? `회신 기관 ${p.agency}` : null,
+                        p.resolvedAt ? `회신 ${new Date(p.resolvedAt).toLocaleDateString('ko-KR')}` : '⚠️ 회신 시각 없음',
+                        p.dueAt
+                          ? `⏳ ${new Date(p.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정 — 아직 안 끝났다`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    : '해결 내용을 지웠다',
+                );
+                close();
+                await after(null);
+              }}
+            >
+              해결 내용 저장
+            </button>
+            <button className="btn ghost" onClick={close}>
+              그만두기
+            </button>
+          </div>
+        </div>
+      )}
+
+      {editing === 'body' && (
+        <div className="rowbox">
+          <p>
+            글 본문을 붙여넣으면 접수·회신 시각(분 단위) · 담당 부서 · <code>…까지</code> 약속을
+            그 자리에서 뽑는다. <b>카페 글을 열어 Ctrl+A → Ctrl+C</b> 하면 된다.
+          </p>
+          <textarea
+            value={text}
+            rows={7}
+            autoFocus
+            placeholder="글 본문을 통째로 붙여넣기"
+            onChange={(e) => setText(e.target.value)}
+          />
+          <div className="civic-row">
+            <button
+              className="btn primary"
+              disabled={busy || !text.trim()}
+              onClick={async () => {
+                const json = await act({ action: 'body', id: c.id, body: text });
+                if (!json) return;
+                const p = json.parsed ?? {};
+                onMsg(
+                  [
+                    p.receivedAt ? `접수 ${new Date(p.receivedAt).toLocaleString('ko-KR')}` : '접수 시각 못 찾음',
+                    p.repliedAt ? `회신 ${new Date(p.repliedAt).toLocaleString('ko-KR')}` : '회신 시각 못 찾음',
+                    p.department ? `부서 ${p.department}` : null,
+                    p.dueAt
+                      ? `⚠️ ${new Date(p.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정 — 아직 안 끝났다`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                );
+                close();
+                await after(null);
+              }}
+            >
+              본문 저장
+            </button>
+            <button className="btn ghost" onClick={close}>
+              그만두기
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
