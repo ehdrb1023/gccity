@@ -249,6 +249,13 @@ const AGENCY = new RegExp(`담당\\s*기관(?:인|는|:)?\\s*(${ORG}{2,60}?)\\s*
 const VIA_DEPARTMENT =
   /((?:과천시청|과천시)(?:\s+[가-힣A-Za-z0-9·.]+){0,3}|[가-힣A-Za-z0-9·.]{2,15}(?:과|팀|실|담당관|사업소|본부|센터))\s*에서\s+담당\s*기관/;
 
+/*
+ * 말머리 없이 바로 부서를 적는 회신. 반드시 **시청으로 시작**하고 조직 이름이 한 낱말
+ * 이상 이어져야 한다 — 그러지 않으면 "과천시는 …" 같은 평범한 문장을 부서로 읽는다.
+ */
+const BARE_DEPARTMENT =
+  /((?:과천시청|과천시)(?:\s+[가-힣A-Za-z0-9·.]+){1,3})\s*(?:에서|에게|에|으로|이)\s/;
+
 const DUE_DATE =
   /(20\d\d)\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(?:\(\s*[월화수목금토일]\s*\))?\s*까지/;
 
@@ -289,6 +296,18 @@ export function parseResolutionBody(body: string): ParsedBody {
     // 외부로 넘긴 건이면 배분 부서는 그 앞에 적힌 시청 조직이다
     const via = VIA_DEPARTMENT.exec(text);
     if (via && !out.department) out.department = clean(via[1]);
+  }
+
+  /*
+   * ★ "담당 부서인" 이라는 말머리를 아예 안 쓰는 회신도 있다. 실측 2026-08-24:
+   *   "**과천시청 교통과 주차지도팀에서** 펜타원 관리단에 … 지도를 요청 하였으며".
+   *   말머리에만 기대면 이런 글에서 부서가 통째로 빈다.
+   *   그래서 마지막으로 **시청으로 시작하는 조직 덩어리**를 한 번 더 찾는다.
+   *   앞의 두 규칙이 아무것도 못 찾았을 때만 — 말머리가 있으면 그쪽이 언제나 정확하다.
+   */
+  if (!out.department && !out.agency) {
+    const bare = BARE_DEPARTMENT.exec(text);
+    if (bare) out.department = clean(bare[1]);
   }
 
   const due = DUE_DATE.exec(text);

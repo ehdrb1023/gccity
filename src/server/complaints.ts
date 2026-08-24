@@ -512,9 +512,23 @@ export async function setStatus(id: string, status: ComplaintStatus): Promise<vo
 
 export async function editComplaint(
   id: string,
-  patch: { title?: string; note?: string; category?: string; url?: string },
+  patch: {
+    title?: string;
+    note?: string;
+    category?: string;
+    url?: string;
+    department?: string;
+    agency?: string;
+  },
 ): Promise<void> {
   const set: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  /*
+   * ★ 부서·기관은 사람이 친 것을 **그대로** 쓴다. 회신문이 규칙에 안 맞는 꼴로 오는 일이
+   *   있어서(말머리가 없거나, 문장 밖에 적혀 있거나) 손으로 고칠 길이 반드시 있어야 한다.
+   *   비우면 지운다 — 잘못 뽑힌 값을 못 지우면 부서별 통계가 계속 틀린 채로 남는다.
+   */
+  if (patch.department !== undefined) set.department = patch.department.trim().slice(0, 60) || null;
+  if (patch.agency !== undefined) set.agency = patch.agency.trim().slice(0, 60) || null;
   if (patch.title !== undefined) {
     const t = patch.title.trim();
     if (!t) throw new Error('제목은 비울 수 없다');

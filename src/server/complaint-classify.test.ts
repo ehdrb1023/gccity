@@ -211,6 +211,23 @@ describe('parseResolutionBody — 외부 기관으로 넘어간 건', () => {
     expect(p.agency).toBe('LH 의왕.과천 사업소');
   });
 
+  /** 실측 2026-08-24 — "담당 부서인" 말머리가 아예 없는 회신. 그래도 부서는 적혀 있다. */
+  it('★ 말머리 없이 바로 부서를 적은 회신도 읽는다', () => {
+    const p = parseResolutionBody(
+      '과천시청 교통과 주차지도팀에서 펜타원 관리단에 해당 회사에 대한 주.정차 지도를 요청 하였으며 2026년 8월 18일(화)부터 상시 주차 단속할 예정이다',
+    );
+    expect(p.department).toBe('과천시청 교통과 주차지도팀');
+    expect(p.agency).toBeNull();
+  });
+
+  it('★ 평범한 문장을 부서로 읽지 않는다 — 틀린 부서가 빈칸보다 나쁘다', () => {
+    const p = parseResolutionBody(
+      '과천시는 경마 공원 이전과 관련되어 지속적으로 반대하였으며 응하고 있지 않다 라는 회신을 받았습니다.',
+    );
+    expect(p.department).toBeNull();
+    expect(p.agency).toBeNull();
+  });
+
   it('시청 안에서 끝난 건은 회신 기관이 비어 있다 — 없는 값을 지어내지 않는다', () => {
     const p = parseResolutionBody(
       '본 민원의 담당 부서인 과천시청 공원녹지과 하천관리팀에서 현장 출동하여 점검한 결과 오수관이 범람하였습니다.',

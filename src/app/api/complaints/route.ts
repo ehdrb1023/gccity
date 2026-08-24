@@ -143,6 +143,8 @@ export async function POST(req: Request) {
           note: body.note === undefined ? undefined : String(body.note),
           category: body.category === undefined ? undefined : String(body.category),
           url: body.url === undefined ? undefined : String(body.url),
+          department: body.department === undefined ? undefined : String(body.department),
+          agency: body.agency === undefined ? undefined : String(body.agency),
         });
         return NextResponse.json({ ok: true });
       }

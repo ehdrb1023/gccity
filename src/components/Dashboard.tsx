@@ -1998,6 +1998,33 @@ function CivicDetail({
       >
         분류
       </button>
+      {/*
+        ★ 손으로 고칠 길을 반드시 둔다. 회신문이 규칙에 안 맞는 꼴로 오는 일이 있고
+          (말머리가 없거나, 부서가 문장 밖에 적혀 있거나), 그때 화면에는 "배분 전" 이 떠
+          "아직 안 정해졌다" 와 구분되지 않는다. 잘못 뽑힌 값도 여기서 지운다.
+      */}
+      {c.kind !== 'resolution' && (
+        <button
+          className="btn ghost"
+          disabled={busy}
+          title="규칙이 못 읽었거나 잘못 읽었을 때 직접 적는다"
+          onClick={async () => {
+            const department = window.prompt(
+              '배분 부서 — 시청 안에서 맡은 곳 (비우면 지운다)',
+              c.department ?? '',
+            );
+            if (department === null) return;
+            const agency = window.prompt(
+              '회신 기관 — 시청 밖에서 답한 곳. 없으면 비워둘 것',
+              c.agency ?? '',
+            );
+            if (agency === null) return;
+            await after(await act({ action: 'edit', id: c.id, department, agency }), '부서를 고쳤다');
+          }}
+        >
+          부서
+        </button>
+      )}
       <button
         className="btn ghost"
         disabled={busy}
