@@ -1282,10 +1282,13 @@ function Complaints() {
   const resolutionFor = new Map<string, Complaint>();
   for (const c of items) if (c.resolutionOf) resolutionFor.set(c.resolutionOf, c);
 
-  const visible = items.filter((c) => !c.duplicateOf && !c.resolutionOf);
-  const hidden = items.length - visible.length;
-  const confirmed = visible.filter((c) => !c.aiDraft);
-  const drafts = visible.filter((c) => c.aiDraft);
+  const confirmed = items.filter((c) => !c.aiDraft && !c.duplicateOf && !c.resolutionOf);
+  /*
+   * ★ 초안은 합치지 않는다. 회신 초안이 민원 줄 안으로 접혀 들어가면 [확정] 버튼이
+   *   초안 보드에서 사라져, 사람이 검토할 길이 없어진다. 검토 대기열은 끝까지 평평하게 둔다.
+   */
+  const drafts = items.filter((c) => c.aiDraft && !c.duplicateOf);
+  const hidden = items.filter((c) => c.duplicateOf || (c.resolutionOf && !c.aiDraft)).length;
   const chatDrafts = drafts.filter((c) => c.origin === 'chat');
   const cafeDrafts = drafts.filter((c) => c.origin !== 'chat');
 
