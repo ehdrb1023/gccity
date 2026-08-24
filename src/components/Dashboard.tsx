@@ -1090,8 +1090,27 @@ const ORIGIN_LABEL: Record<Complaint['origin'], string> = {
   manual: '직접',
 };
 
+type CafePost = {
+  id: string;
+  title: string | null;
+  url: string | null;
+  body: string;
+  createdAt: string;
+  summarizedAt: string | null;
+  ok: boolean | null;
+  error: string | null;
+  drafted: number;
+};
+
+/** 왼쪽 보드의 세 칸. 화면이 하는 일이 셋으로 갈린다 — 확정된 것 / 검토할 것 / 넣는 곳. */
+type Board = 'list' | 'drafts' | 'cafe';
+
 /**
- * 민원실 — 과천 민원 게시글을 모아 상태를 따라가는 화면.
+ * 민원실 — 과천 민원을 모아 흐름을 따라가는 화면.
+ *
+ * ★ 왼쪽 보드가 **일의 방향**이다. 카페 글을 넣으면(카페) 모델이 초안을 만들고(AI 초안),
+ *   사람이 확정한 것만 목록에 남는다(민원 목록). 되돌아가는 화살표는 없다 —
+ *   초안과 확정본을 한 목록에 섞으면 무엇을 아직 안 봤는지 알 수 없게 된다.
  *
  * ★ 자료실과 달리 **방에 매이지 않는다.** 민원은 도시의 일이라 팔로우 방을 바꿔도
  *   같은 목록이 보여야 한다. 그래서 방 칩이 없다.
@@ -1104,13 +1123,15 @@ function Complaints() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [sources, setSources] = useState<CrawlSource[]>([]);
   const [authors, setAuthors] = useState<CivicAuthor[]>([]);
+  const [cafePosts, setCafePosts] = useState<CafePost[]>([]);
   const [flow, setFlow] = useState<Flow | null>(null);
   const [digest, setDigest] = useState<DigestRun | null>(null);
   const [digestDue, setDigestDue] = useState(false);
   const [digestHours, setDigestHours] = useState(24);
-  /** 초안만 보기 — 모델이 넣은 것을 사람이 카페와 대조해 훑는 화면이다 */
-  const [draftsOnly, setDraftsOnly] = useState(false);
   const [due, setDue] = useState(0);
+  const [board, setBoard] = useState<Board>('list');
+  /** 펼쳐 본 민원. 게시판처럼 제목만 보이다가 누르면 아래에 내용이 뜬다 */
+  const [openId, setOpenId] = useState<string | null>(null);
   const [status, setStatus] = useState<'all' | CivicStatus>('all');
   const [kind, setKind] = useState<'all' | PostKind>('all');
   /** 잇기 중인 처리 글. 골라두면 민원 줄에 [여기에 잇기] 가 뜬다 */
@@ -1124,7 +1145,7 @@ function Complaints() {
   const [busy, setBusy] = useState(false);
   const [panel, setPanel] = useState<'none' | 'paste' | 'sources' | 'authors'>('none');
   const [paste, setPaste] = useState('');
-  const [board, setBoard] = useState('');
+  const [pasteBoard, setPasteBoard] = useState('');
 
   const reload = useCallback(async (st: string, query: string, kd: string = 'all') => {
     try {
@@ -1140,6 +1161,7 @@ function Complaints() {
       setCounts(json.counts);
       setSources(json.sources);
       setAuthors(json.authors ?? []);
+      setCafePosts(json.cafePosts ?? []);
       setFlow(json.flow ?? null);
       setDigest(json.digest ?? null);
       setDigestDue(Boolean(json.digestDue));
@@ -1210,25 +1232,44 @@ function Complaints() {
   };
 
   const submitPaste = async () => {
-    const json = await act({ action: 'paste', text: paste, board });
+    const json = await act({ action: 'paste', text: paste, board: pasteBoard });
     if (!json) return;
     setPaste('');
     setMsg(`${json.parsed}줄에서 ${json.added}건 담았다 (이미 있던 것 ${json.skipped}건)`);
     await reload(status, q, kind);
   };
 
+  /* 보드를 옮길 때 걸러둔 것을 풀어준다 — "민원이 하나도 없다" 로 보이는 착시를 막는다 */
+  const goto = (b: Board) => {
+    setBoard(b);
+    setOpenId(null);
+    setPanel('none');
+    if (b !== 'list') {
+      setStatus('all');
+      setKind('all');
+      setQ('');
+    }
+  };
+
+  const confirmed = items.filter((c) => !c.aiDraft);
+  const drafts = items.filter((c) => c.aiDraft);
+  const chatDrafts = drafts.filter((c) => c.origin === 'chat');
+  const cafeDrafts = drafts.filter((c) => c.origin !== 'chat');
+
+  const rowProps = { busy, act, after, linking, setLinking, setBodyFor, setBodyText };
+
   return (
     <section className="panel">
       <header>
         <h2>민원실</h2>
-        <span className="count">전체 {counts.all ?? 0}건 · 방과 무관한 하나의 목록이다</span>
+        <span className="count">확정 {confirmed.length}건 · 초안 {drafts.length}건 · 방과 무관한 하나의 목록이다</span>
         <div className="spacer" />
         <div className="hdr-actions">
           <button className="btn ghost" onClick={() => setPanel(panel === 'authors' ? 'none' : 'authors')}>
             작성자
           </button>
           <button className="btn ghost" onClick={() => setPanel(panel === 'paste' ? 'none' : 'paste')}>
-            붙여넣기
+            목록 붙여넣기
           </button>
           <button className="btn ghost" onClick={() => setPanel(panel === 'sources' ? 'none' : 'sources')}>
             출처 {sources.length > 0 && `(${sources.length})`}
@@ -1250,6 +1291,7 @@ function Complaints() {
                   ? `분석 실패 — ${d.error}`
                   : `${d.messages}건 읽어 ${d.drafted}건 뽑았고 ${d.added}건 새로 담았다`,
               );
+              if (!d.error && d.added > 0) goto('drafts');
               await reload(status, q, kind);
             }}
           >
@@ -1302,48 +1344,62 @@ function Complaints() {
         </div>
       )}
 
-      {/*
-        흐름 요약. ★ 모수(measured)를 반드시 함께 적는다 — "평균 3일" 이 두 건에서 나온
-        값인지 백 건에서 나온 값인지 모르면 그 숫자는 판단 근거가 못 된다.
-      */}
-      {flow && (
-        <div className="flowbar">
-          <div>
-            <b>{flow.reports}</b>
-            <span>민원</span>
-          </div>
-          <div>
-            <b>{flow.resolutions}</b>
-            <span>처리</span>
-          </div>
-          <div>
-            <b>{flow.avgLeadDays == null ? '—' : `${flow.avgLeadDays}일`}</b>
-            <span>평균 처리 ({flow.measured}건 기준)</span>
-          </div>
-          <div>
-            <b>{flow.medianLeadDays == null ? '—' : `${flow.medianLeadDays}일`}</b>
-            <span>중앙값</span>
-          </div>
-          <div>
-            <b>{flow.maxLeadDays == null ? '—' : `${flow.maxLeadDays}일`}</b>
-            <span>최장</span>
-          </div>
-          <div>
-            <b>{flow.sameDay}</b>
-            <span>당일 처리</span>
-          </div>
-          {flow.unknown > 0 && (
-            <div className="warn">
-              <b>{flow.unknown}</b>
-              <span>미분류 — [작성자] 에서 정할 것</span>
-            </div>
-          )}
+      {/* 자동 수집은 하루 한 번이다(vercel.json). 밀린 것을 몰래 긁지 않고 사람에게 알린다 */}
+      {due > 0 && (
+        <div className="note">
+          <b>출처 {due}곳이 갱신할 때가 됐다.</b> 위 <b>지금 긁기</b> 를 누르면 바로 가져온다.
         </div>
+      )}
+
+      {panel === 'paste' && (
+        <div className="civic-panel">
+          <p>
+            <b>게시판 <u>목록</u>을 통째로 복사해 붙여넣으면 한 줄이 한 건이 된다.</b> 댓글 수 <code>[3]</code> ·
+            새 글 배지 <code>N</code> · 아이콘은 알아서 뗀다. 글 <b>본문</b>을 요약해 담으려면 왼쪽{' '}
+            <b>카페 글</b> 보드를 쓸 것.
+          </p>
+          <input
+            value={pasteBoard}
+            placeholder="출처 이름 (예: 과천 카페 자유게시판)"
+            onChange={(e) => setPasteBoard(e.target.value)}
+          />
+          <textarea
+            value={paste}
+            rows={7}
+            placeholder={'과천 시민 모두 모여라!「제3회 과천시 자원봉사 이음축제」 개최  N\n2026년 8월 20일(목) 양재천 냄새 민원  N\n갈현삼거리 횡단보도 바꿔주세요. [3] N'}
+            onChange={(e) => setPaste(e.target.value)}
+          />
+          <div className="civic-row">
+            <button className="btn primary" disabled={busy || !paste.trim()} onClick={() => void submitPaste()}>
+              목록 담기
+            </button>
+            <button
+              className="btn ghost"
+              disabled={busy}
+              onClick={async () => {
+                const title = window.prompt('민원 제목');
+                if (!title?.trim()) return;
+                const url = window.prompt('링크 (없으면 비워둘 것)') ?? '';
+                await after(await act({ action: 'manual', title, url }), '한 건 담았다');
+              }}
+            >
+              한 건만 직접 추가
+            </button>
+          </div>
+        </div>
+      )}
+
+      {panel === 'authors' && (
+        <Authors authors={authors} busy={busy} act={act} reload={() => reload(status, q, kind)} onMsg={setMsg} />
+      )}
+
+      {panel === 'sources' && (
+        <Sources sources={sources} busy={busy} act={act} reload={() => reload(status, q, kind)} onCrawl={crawl} />
       )}
 
       {linking && (
         <div className="note">
-          <b>잇는 중:</b> {linking.title.slice(0, 40)} — 아래 민원 줄의 <b>[여기에 잇기]</b> 를 누르면 짝이 된다.{' '}
+          <b>잇는 중:</b> {linking.title.slice(0, 40)} — 민원 줄의 <b>[여기에 잇기]</b> 를 누르면 짝이 된다.{' '}
           <button className="btn ghost" onClick={() => setLinking(null)}>
             그만두기
           </button>
@@ -1395,270 +1451,489 @@ function Complaints() {
         </div>
       )}
 
-      {/* 자동 수집은 하루 한 번이다(vercel.json). 밀린 것을 몰래 긁지 않고 사람에게 알린다 */}
-      {due > 0 && (
-        <div className="note">
-          <b>출처 {due}곳이 갱신할 때가 됐다.</b> 위 <b>지금 긁기</b> 를 누르면 바로 가져온다.
+      <div className="civic-board">
+        {/* 왼쪽 보드 — 일이 흘러가는 차례대로 위에서 아래로 놓는다 */}
+        <nav className="civic-nav">
+          <button data-on={board === 'list'} onClick={() => goto('list')}>
+            <b>민원 목록</b>
+            <span>{confirmed.length}건 · 사람이 확정한 것</span>
+          </button>
+          <button data-on={board === 'drafts'} onClick={() => goto('drafts')}>
+            <b>AI 초안</b>
+            <span>
+              {drafts.length}건 · 카톡 {chatDrafts.length} / 카페 {cafeDrafts.length}
+            </span>
+          </button>
+          <button data-on={board === 'cafe'} onClick={() => goto('cafe')}>
+            <b>카페 글</b>
+            <span>{cafePosts.length}건 보관 · 붙여넣으면 요약한다</span>
+          </button>
+
+          {/*
+            흐름 요약. ★ 모수(measured)를 반드시 함께 적는다 — "평균 3일" 이 두 건에서
+            나온 값인지 백 건에서 나온 값인지 모르면 그 숫자는 판단 근거가 못 된다.
+          */}
+          {flow && (
+            <div className="civic-stat">
+              <div>
+                <b>{flow.reports}</b>
+                <span>민원</span>
+              </div>
+              <div>
+                <b>{flow.resolutions}</b>
+                <span>처리</span>
+              </div>
+              <div>
+                <b>{flow.avgLeadDays == null ? '—' : `${flow.avgLeadDays}일`}</b>
+                <span>평균 ({flow.measured}건 기준)</span>
+              </div>
+              <div>
+                <b>{flow.sameDay}</b>
+                <span>당일 처리</span>
+              </div>
+              {flow.unknown > 0 && (
+                <div className="warn">
+                  <b>{flow.unknown}</b>
+                  <span>미분류 — [작성자] 에서 정할 것</span>
+                </div>
+              )}
+            </div>
+          )}
+        </nav>
+
+        <div className="civic-main">
+          {board === 'list' && (
+            <>
+              <div className="chips">
+                <button data-on={kind === 'all'} onClick={() => setKind('all')}>
+                  전체
+                </button>
+                {KIND.map((k) => (
+                  <button key={k.key} data-on={kind === k.key} onClick={() => setKind(k.key)}>
+                    {k.label}
+                  </button>
+                ))}
+                <span className="dim">|</span>
+                <button data-on={status === 'all'} onClick={() => setStatus('all')}>
+                  전체 {counts.all ?? 0}
+                </button>
+                {CIVIC_STATUS.map((s) => (
+                  <button key={s.key} data-on={status === s.key} onClick={() => setStatus(s.key)}>
+                    {s.label} {counts[s.key] ?? 0}
+                  </button>
+                ))}
+                <input
+                  className="civic-search"
+                  value={q}
+                  placeholder="제목·본문 검색"
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </div>
+
+              {confirmed.length === 0 ? (
+                <div className="empty">
+                  <b>{q || status !== 'all' || kind !== 'all' ? '조건에 맞는 민원이 없다' : '확정된 민원이 아직 없다'}</b>
+                  <b>AI 초안</b> 에서 [확정] 을 누르면 여기로 온다.
+                </div>
+              ) : (
+                <ul className="civic-list">
+                  {confirmed.map((c) => (
+                    <li key={c.id} data-kind={c.kind} data-open={openId === c.id}>
+                      {/* 게시판처럼 한 줄 — 부서 · 제목 · 날짜. 누르면 아래가 열린다 */}
+                      <button className="civic-line" onClick={() => setOpenId(openId === c.id ? null : c.id)}>
+                        <span className={`cdept ${c.department ? '' : 'none'}`}>
+                          {c.department ?? (c.kind === 'report' ? '배분 전' : '—')}
+                        </span>
+                        <span className="cline-title">
+                          <span className={`ktag k-${c.kind}`}>{KIND_LABEL[c.kind]}</span>
+                          {c.title}
+                          {c.dueAt && <span className="cdue">⏳</span>}
+                        </span>
+                        <span className="cline-date">{dayLabel(c.reportedAt ?? c.postedAt ?? c.createdAt)}</span>
+                      </button>
+
+                      {openId === c.id && (
+                        <div className="civic-detail">
+                          <CivicDetail c={c} {...rowProps} />
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {board === 'drafts' && (
+            <>
+              <p className="dim">
+                모델이 뽑은 <b>초안</b>이다. 카페와 대조해 <b>[확정]</b> 하면 민원 목록으로 가고,
+                아니면 <b>[지우기]</b>. 확정하기 전에는 통계에 들어가지 않는다.
+              </p>
+
+              <h4 className="civic-h">카톡에서 <span className="dim">{chatDrafts.length}건</span></h4>
+              {chatDrafts.length === 0 ? (
+                <p className="dim">없다. 위 [지금 분석] 을 누르면 쌓인 대화에서 뽑는다.</p>
+              ) : (
+                <ul className="civics">
+                  {chatDrafts.map((c) => (
+                    <li key={c.id} data-kind={c.kind}>
+                      <CivicDetail c={c} {...rowProps} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <h4 className="civic-h">카페에서 <span className="dim">{cafeDrafts.length}건</span></h4>
+              {cafeDrafts.length === 0 ? (
+                <p className="dim">없다. 왼쪽 [카페 글] 에 본문을 붙여넣으면 여기 쌓인다.</p>
+              ) : (
+                <ul className="civics">
+                  {cafeDrafts.map((c) => (
+                    <li key={c.id} data-kind={c.kind}>
+                      <CivicDetail c={c} {...rowProps} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {board === 'cafe' && (
+            <CafeBox
+              posts={cafePosts}
+              busy={busy}
+              act={act}
+              reload={() => reload(status, q, kind)}
+              onMsg={setMsg}
+              onDone={() => goto('drafts')}
+            />
+          )}
         </div>
-      )}
+      </div>
+    </section>
+  );
+}
 
-      {panel === 'paste' && (
-        <div className="civic-panel">
-          <p>
-            <b>게시판 목록을 통째로 복사해 붙여넣으면 한 줄이 한 건이 된다.</b> 댓글 수 <code>[3]</code> ·
-            새 글 배지 <code>N</code> · 아이콘은 알아서 뗀다. <b>네이버 카페는 robots.txt 가 자동 수집을
-            막고 있어</b> 이 길이 유일하다 — 사람이 보고 복사하는 것이라 정책과 부딪히지 않는다.
-          </p>
-          <input
-            value={board}
-            placeholder="출처 이름 (예: 과천 카페 자유게시판)"
-            onChange={(e) => setBoard(e.target.value)}
-          />
-          <textarea
-            value={paste}
-            rows={7}
-            placeholder={'과천 시민 모두 모여라!「제3회 과천시 자원봉사 이음축제」 개최  N\n2026년 8월 20일(목) 양재천 냄새 민원  N\n갈현삼거리 횡단보도 바꿔주세요. [3] N'}
-            onChange={(e) => setPaste(e.target.value)}
-          />
-          <div className="civic-row">
-            <button className="btn primary" disabled={busy || !paste.trim()} onClick={() => void submitPaste()}>
-              목록 담기
-            </button>
-            <button
-              className="btn ghost"
-              disabled={busy}
-              onClick={async () => {
-                const title = window.prompt('민원 제목');
-                if (!title?.trim()) return;
-                const url = window.prompt('링크 (없으면 비워둘 것)') ?? '';
-                await after(await act({ action: 'manual', title, url }), '한 건 담았다');
-              }}
-            >
-              한 건만 직접 추가
-            </button>
-          </div>
-        </div>
-      )}
+type RowProps = {
+  busy: boolean;
+  act: (body: Record<string, unknown>) => Promise<Record<string, any> | null>;
+  after: (json: Record<string, any> | null, note?: string) => Promise<void>;
+  linking: Complaint | null;
+  setLinking: (c: Complaint | null) => void;
+  setBodyFor: (c: Complaint | null) => void;
+  setBodyText: (s: string) => void;
+};
 
-      {panel === 'authors' && (
-        <Authors
-          authors={authors}
-          busy={busy}
-          act={act}
-          reload={() => reload(status, q, kind)}
-          onMsg={setMsg}
-        />
-      )}
-
-      {panel === 'sources' && <Sources sources={sources} busy={busy} act={act} reload={() => reload(status, q, kind)} onCrawl={crawl} />}
-
-      <div className="chips">
-        <button data-on={kind === 'all'} onClick={() => setKind('all')}>
-          전체
-        </button>
-        <button data-on={draftsOnly} onClick={() => setDraftsOnly(!draftsOnly)}>
-          AI 초안만
-        </button>
+/**
+ * 민원 한 건의 속살. 목록에서는 제목을 눌렀을 때만 펼쳐지고, AI 초안 보드에서는 늘 펼쳐져 있다.
+ * ★ 두 곳이 같은 컴포넌트를 쓴다 — 초안과 확정본에서 보이는 정보가 달라지면
+ *   "확정하면 뭐가 바뀌는지" 를 사람이 예측할 수 없게 된다.
+ */
+function CivicDetail({
+  c,
+  busy,
+  act,
+  after,
+  linking,
+  setLinking,
+  setBodyFor,
+  setBodyText,
+}: { c: Complaint } & RowProps) {
+  return (
+    <>
+      {/* 종류를 손으로 고치면 잠긴다 — 이후 재분류가 그 행을 덮지 않는다 */}
+      <select
+        className={`ckind k-${c.kind}`}
+        value={c.kind}
+        disabled={busy}
+        title={c.kindLocked ? '손으로 정한 종류 (재분류가 덮지 않는다)' : '규칙이 정한 종류'}
+        onChange={async (e) => {
+          await after(await act({ action: 'kind', id: c.id, kind: e.target.value }));
+        }}
+      >
         {KIND.map((k) => (
-          <button key={k.key} data-on={kind === k.key} onClick={() => setKind(k.key)}>
-            {k.label}{' '}
-            {flow
-              ? k.key === 'report'
-                ? flow.reports
-                : k.key === 'resolution'
-                  ? flow.resolutions
-                  : k.key === 'notice'
-                    ? flow.notices
-                    : flow.unknown
-              : ''}
-          </button>
+          <option key={k.key} value={k.key}>
+            {k.label}
+          </option>
         ))}
-      </div>
+      </select>
 
-      <div className="chips">
-        <button data-on={status === 'all'} onClick={() => setStatus('all')}>
-          전체 {counts.all ?? 0}
-        </button>
+      <select
+        className={`cstat s-${c.status}`}
+        value={c.status}
+        disabled={busy}
+        onChange={async (e) => {
+          await after(await act({ action: 'status', id: c.id, status: e.target.value }));
+        }}
+      >
         {CIVIC_STATUS.map((s) => (
-          <button key={s.key} data-on={status === s.key} onClick={() => setStatus(s.key)}>
-            {s.label} {counts[s.key] ?? 0}
-          </button>
+          <option key={s.key} value={s.key}>
+            {s.label}
+          </option>
         ))}
-        <input
-          className="civic-search"
-          value={q}
-          placeholder="제목·메모 검색"
-          onChange={(e) => setQ(e.target.value)}
-        />
+      </select>
+
+      <div className="cmeta">
+        <span className="ctitle">
+          {/* 모델이 넣은 것은 사람이 넣은 것과 반드시 구분해 보여준다 */}
+          {c.aiDraft && <span className="aibadge" title={c.aiNote ?? ''}>AI 초안</span>}
+          {c.url ? (
+            <a href={c.url} target="_blank" rel="noreferrer noopener">
+              {c.title}
+            </a>
+          ) : (
+            c.title
+          )}
+        </span>
+        <span className="csub">
+          {c.board ?? ORIGIN_LABEL[c.origin]}
+          {c.author && ` · ${c.author}`}
+          {` · ${dayLabel(c.postedAt ?? c.createdAt)}`}
+          {c.postedAt ? '' : ' (담은 날)'}
+          {c.category && ` · #${c.category}`}
+        </span>
+        {/* 접수 → 회신. 처리 글은 제목 날짜가 접수일이라 짝짓기 없이도 잡힌다 */}
+        {(leadLabel(c.reportedAt, c.resolvedAt) || c.department) && (
+          <span className="clead">
+            {leadLabel(c.reportedAt, c.resolvedAt)}
+            {c.department && `${leadLabel(c.reportedAt, c.resolvedAt) ? ' · ' : ''}${c.department}`}
+            {/* ★ 회신이 왔어도 "…까지" 약속이 남아 있으면 끝난 게 아니다 */}
+            {c.dueAt && ` · ⏳ ${new Date(c.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정`}
+          </span>
+        )}
+        {c.summary && <span className="cbody">{c.summary}</span>}
+        {c.body && <span className="cbody dim">{c.body.slice(0, 400)}{c.body.length > 400 ? '…' : ''}</span>}
+        {c.note && <span className="cnote">✎ {c.note}</span>}
       </div>
 
-      {(draftsOnly ? items.filter((c) => c.aiDraft) : items).length === 0 ? (
+      {/* 짝짓기는 사람이 한다. 제목이 비슷하다고 자동으로 엮으면 통계가 조용히 틀린다 */}
+      {c.kind === 'resolution' &&
+        (c.resolutionOf ? (
+          <button
+            className="btn ghost"
+            disabled={busy}
+            onClick={async () => {
+              await after(await act({ action: 'unlink', id: c.id }));
+            }}
+          >
+            잇기 해제
+          </button>
+        ) : (
+          <button className="btn ghost" disabled={busy} onClick={() => setLinking(linking?.id === c.id ? null : c)}>
+            {linking?.id === c.id ? '고르는 중' : '민원에 잇기'}
+          </button>
+        ))}
+
+      {linking && c.kind === 'report' && c.id !== linking.id && (
+        <button
+          className="btn primary"
+          disabled={busy}
+          onClick={async () => {
+            await after(await act({ action: 'link', resolutionId: linking.id, reportId: c.id }), '민원과 처리를 이었다');
+            setLinking(null);
+          }}
+        >
+          여기에 잇기
+        </button>
+      )}
+
+      {c.aiDraft && (
+        <button
+          className="btn primary"
+          disabled={busy}
+          title={c.aiNote ?? '확정하면 민원 목록으로 간다'}
+          onClick={async () => {
+            await after(await act({ action: 'confirm', id: c.id }), '민원 목록으로 옮겼다');
+          }}
+        >
+          확정
+        </button>
+      )}
+      <button
+        className="btn ghost"
+        disabled={busy}
+        title="글 본문을 붙여넣어 시각·부서·예정일을 뽑는다"
+        onClick={() => {
+          setBodyFor(c);
+          setBodyText(c.body ?? '');
+        }}
+      >
+        본문{c.body ? ' ✓' : ''}
+      </button>
+      <button
+        className="btn ghost"
+        disabled={busy}
+        onClick={async () => {
+          const note = window.prompt('메모 (비우면 지운다)', c.note ?? '');
+          if (note === null) return;
+          await after(await act({ action: 'edit', id: c.id, note }));
+        }}
+      >
+        메모
+      </button>
+      <button
+        className="btn ghost"
+        disabled={busy}
+        onClick={async () => {
+          const category = window.prompt('분류 (도로·환경·교통… 비우면 지운다)', c.category ?? '');
+          if (category === null) return;
+          await after(await act({ action: 'edit', id: c.id, category }));
+        }}
+      >
+        분류
+      </button>
+      <button
+        className="btn ghost"
+        disabled={busy}
+        onClick={async () => {
+          if (!window.confirm(`"${c.title.slice(0, 40)}" 을 목록에서 지울까?`)) return;
+          await after(await act({ action: 'delete', id: c.id }));
+        }}
+      >
+        지우기
+      </button>
+    </>
+  );
+}
+
+/**
+ * 카페 글 보관함 — 본문을 넣는 곳.
+ *
+ * ★ 네이버 카페는 `robots.txt` 가 모든 봇을 막아 **서버가 긁지 못한다.** 그래서 사람이
+ *   글을 열어 복사해 넣는 것이 유일한 길이다. 막힌 것을 우회하지 않는 것이 이 앱의 규칙이다.
+ *
+ * ★ 저장이 먼저고 요약이 나중이다. 모델 호출이 실패해도 애써 복사한 본문은 남는다 —
+ *   실패했다고 원문까지 버리면 카페에 다시 들어가 복사해 오라는 뜻이 된다.
+ */
+function CafeBox({
+  posts,
+  busy,
+  act,
+  reload,
+  onMsg,
+  onDone,
+}: {
+  posts: CafePost[];
+  busy: boolean;
+  act: (body: Record<string, unknown>) => Promise<Record<string, any> | null>;
+  reload: () => Promise<void>;
+  onMsg: (m: string | null) => void;
+  onDone: () => void;
+}) {
+  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const [body, setBody] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const submit = async () => {
+    onMsg('저장하고 요약하는 중… (수십 초 걸릴 수 있다)');
+    const json = await act({ action: 'cafe-add', title, url, body });
+    if (!json) {
+      onMsg(null);
+      return;
+    }
+    if (json.duplicate) {
+      onMsg('이미 담아둔 글이다 — 같은 본문은 한 번만 들어간다');
+      await reload();
+      return;
+    }
+    setTitle('');
+    setUrl('');
+    setBody('');
+    const s = json.summary as { ok: boolean; drafted: number; added: number; error: string | null } | null;
+    if (s?.error) {
+      // 본문은 저장됐다는 것을 분명히 말한다. 사람이 다시 복사하지 않아도 된다
+      onMsg(`본문은 저장했지만 요약이 실패했다 — ${s.error}. 아래 [다시 요약] 으로 재시도할 수 있다`);
+      await reload();
+      return;
+    }
+    onMsg(`저장하고 ${s?.added ?? 0}건을 AI 초안으로 올렸다`);
+    await reload();
+    if ((s?.added ?? 0) > 0) onDone();
+  };
+
+  return (
+    <>
+      <div className="civic-panel">
+        <p>
+          <b>카페 글을 열어 본문을 통째로 복사해 넣으면</b> 모델이 요약해 <b>AI 초안</b> 으로 올린다.
+          제목과 주소는 없어도 된다. <b>네이버 카페는 robots.txt 가 자동 수집을 막고 있어</b> 이 길이
+          유일하다 — 사람이 보고 복사하는 것이라 정책과 부딪히지 않는다.
+        </p>
+        <input value={title} placeholder="제목 (없으면 비워둘 것)" onChange={(e) => setTitle(e.target.value)} />
+        <input value={url} placeholder="주소 (없으면 비워둘 것)" onChange={(e) => setUrl(e.target.value)} />
+        <textarea
+          value={body}
+          rows={10}
+          placeholder="글 본문을 통째로 붙여넣기 (Ctrl+A → Ctrl+C)"
+          onChange={(e) => setBody(e.target.value)}
+        />
+        <div className="civic-row">
+          <button className="btn primary" disabled={busy || body.trim().length < 20} onClick={() => void submit()}>
+            저장하고 요약
+          </button>
+          <span className="dim">{body.trim().length}자</span>
+        </div>
+      </div>
+
+      {posts.length === 0 ? (
         <div className="empty">
-          <b>{q || status !== 'all' ? '조건에 맞는 민원이 없다' : '아직 담아둔 민원이 없다'}</b>
-          게시판 목록을 <b>붙여넣기</b> 하거나, <b>출처</b> 에 RSS·게시판 주소를 등록하거나,
-          대화 탭에서 말풍선의 <b>민원</b> 버튼을 누르면 여기 쌓인다.
+          <b>아직 담아둔 카페 글이 없다</b>
+          위 상자에 본문을 붙여넣으면 원문이 여기 남고, 요약은 <b>AI 초안</b> 으로 올라간다.
         </div>
       ) : (
         <ul className="civics">
-          {(draftsOnly ? items.filter((c) => c.aiDraft) : items).map((c) => (
-            <li key={c.id} data-kind={c.kind}>
-              {/* 종류를 손으로 고치면 잠긴다 — 이후 재분류가 그 행을 덮지 않는다 */}
-              <select
-                className={`ckind k-${c.kind}`}
-                value={c.kind}
-                disabled={busy}
-                title={c.kindLocked ? '손으로 정한 종류 (재분류가 덮지 않는다)' : '규칙이 정한 종류'}
-                onChange={async (e) => {
-                  await after(await act({ action: 'kind', id: c.id, kind: e.target.value }));
-                }}
-              >
-                {KIND.map((k) => (
-                  <option key={k.key} value={k.key}>
-                    {k.label}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                className={`cstat s-${c.status}`}
-                value={c.status}
-                disabled={busy}
-                onChange={async (e) => {
-                  await after(await act({ action: 'status', id: c.id, status: e.target.value }));
-                }}
-              >
-                {CIVIC_STATUS.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-
+          {posts.map((p) => (
+            <li key={p.id}>
               <div className="cmeta">
                 <span className="ctitle">
-                  {/* 모델이 넣은 것은 사람이 넣은 것과 반드시 구분해 보여준다 */}
-                  {c.aiDraft && <span className="aibadge" title={c.aiNote ?? ''}>AI 초안</span>}
-                  {c.url ? (
-                    <a href={c.url} target="_blank" rel="noreferrer noopener">
-                      {c.title}
+                  {p.url ? (
+                    <a href={p.url} target="_blank" rel="noreferrer noopener">
+                      {p.title || '(제목 없음)'}
                     </a>
                   ) : (
-                    c.title
+                    p.title || '(제목 없음)'
                   )}
                 </span>
                 <span className="csub">
-                  {c.board ?? ORIGIN_LABEL[c.origin]}
-                  {c.author && ` · ${c.author}`}
-                  {` · ${dayLabel(c.postedAt ?? c.createdAt)}`}
-                  {c.postedAt ? '' : ' (담은 날)'}
-                  {c.category && ` · #${c.category}`}
+                  {dayLabel(p.createdAt)} · {p.body.length}자
+                  {/* ★ 실패를 숨기지 않는다. 0건인 것과 안 돌아간 것은 겉보기가 같다 */}
+                  {p.summarizedAt == null
+                    ? ' · 아직 요약 안 함'
+                    : p.ok
+                      ? ` · 초안 ${p.drafted}건`
+                      : ` · ⚠️ 요약 실패`}
                 </span>
-                {/* 접수 → 회신. 처리 글은 제목 날짜가 접수일이라 짝짓기 없이도 잡힌다 */}
-                {leadLabel(c.reportedAt, c.resolvedAt) && (
-                  <span className="clead">
-                    {leadLabel(c.reportedAt, c.resolvedAt)}
-                    {c.department && ` · ${c.department}`}
-                    {/* ★ 회신이 왔어도 "…까지" 약속이 남아 있으면 끝난 게 아니다 */}
-                    {c.dueAt && ` · ⏳ ${new Date(c.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정`}
-                  </span>
-                )}
-                {c.summary ? (
-                  <span className="cbody">{c.summary}</span>
-                ) : (
-                  c.body && <span className="cbody">{c.body.slice(0, 200)}</span>
-                )}
-                {c.note && <span className="cnote">✎ {c.note}</span>}
+                {p.ok === false && p.error && <span className="cnote">⚠️ {p.error}</span>}
+                <span className="cbody dim">
+                  {openId === p.id ? p.body : `${p.body.slice(0, 200)}${p.body.length > 200 ? '…' : ''}`}
+                </span>
               </div>
-
-              {/* 짝짓기는 사람이 한다. 제목이 비슷하다고 자동으로 엮으면 통계가 조용히 틀린다 */}
-              {c.kind === 'resolution' &&
-                (c.resolutionOf ? (
-                  <button
-                    className="btn ghost"
-                    disabled={busy}
-                    onClick={async () => {
-                      await after(await act({ action: 'unlink', id: c.id }));
-                    }}
-                  >
-                    잇기 해제
-                  </button>
-                ) : (
-                  <button
-                    className="btn ghost"
-                    disabled={busy}
-                    onClick={() => setLinking(linking?.id === c.id ? null : c)}
-                  >
-                    {linking?.id === c.id ? '고르는 중' : '민원에 잇기'}
-                  </button>
-                ))}
-
-              {linking && c.kind === 'report' && c.id !== linking.id && (
-                <button
-                  className="btn primary"
-                  disabled={busy}
-                  onClick={async () => {
-                    await after(
-                      await act({ action: 'link', resolutionId: linking.id, reportId: c.id }),
-                      '민원과 처리를 이었다',
-                    );
-                    setLinking(null);
-                  }}
-                >
-                  여기에 잇기
-                </button>
-              )}
-
-              {c.aiDraft && (
-                <button
-                  className="btn primary"
-                  disabled={busy}
-                  title={c.aiNote ?? ''}
-                  onClick={async () => {
-                    await after(await act({ action: 'confirm', id: c.id }));
-                  }}
-                >
-                  확정
-                </button>
-              )}
+              <button className="btn ghost" onClick={() => setOpenId(openId === p.id ? null : p.id)}>
+                {openId === p.id ? '접기' : '원문'}
+              </button>
               <button
                 className="btn ghost"
                 disabled={busy}
-                title="글 본문을 붙여넣어 시각·부서·예정일을 뽑는다"
-                onClick={() => {
-                  setBodyFor(c);
-                  setBodyText(c.body ?? '');
+                title="같은 초안은 다시 만들지 않는다 — 사람이 확정해둔 것을 덮지 않는다"
+                onClick={async () => {
+                  onMsg('다시 요약하는 중…');
+                  const json = await act({ action: 'cafe-summarize', id: p.id });
+                  const s = json?.summary as { drafted: number; added: number; error: string | null } | undefined;
+                  onMsg(s?.error ? `요약 실패 — ${s.error}` : `${s?.drafted ?? 0}건 뽑아 ${s?.added ?? 0}건 새로 담았다`);
+                  await reload();
                 }}
               >
-                본문{c.body ? ' ✓' : ''}
+                다시 요약
               </button>
               <button
                 className="btn ghost"
                 disabled={busy}
                 onClick={async () => {
-                  const note = window.prompt('메모 (비우면 지운다)', c.note ?? '');
-                  if (note === null) return;
-                  await after(await act({ action: 'edit', id: c.id, note }));
-                }}
-              >
-                메모
-              </button>
-              <button
-                className="btn ghost"
-                disabled={busy}
-                onClick={async () => {
-                  const category = window.prompt('분류 (도로·환경·교통… 비우면 지운다)', c.category ?? '');
-                  if (category === null) return;
-                  await after(await act({ action: 'edit', id: c.id, category }));
-                }}
-              >
-                분류
-              </button>
-              <button
-                className="btn ghost"
-                disabled={busy}
-                onClick={async () => {
-                  if (!window.confirm(`"${c.title.slice(0, 40)}" 을 목록에서 지울까?`)) return;
-                  await after(await act({ action: 'delete', id: c.id }));
+                  if (!window.confirm('이 카페 글 원문을 지울까? (이미 만들어진 민원 초안은 남는다)')) return;
+                  await act({ action: 'cafe-delete', id: p.id });
+                  await reload();
                 }}
               >
                 지우기
@@ -1667,7 +1942,7 @@ function Complaints() {
           ))}
         </ul>
       )}
-    </section>
+    </>
   );
 }
 

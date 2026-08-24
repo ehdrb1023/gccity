@@ -379,19 +379,6 @@ input { font: inherit; }
 
 /* ── 민원 흐름 ───────────────────────────────────────── */
 
-/*
- * 흐름 요약 줄. ★ 모수를 큰 숫자 옆에 반드시 적는다 —
- * "평균 3일" 이 두 건에서 나온 값인지 백 건에서 나온 값인지 모르면 판단 근거가 못 된다.
- */
-.flowbar {
-  display: flex; flex-wrap: wrap; gap: 18px;
-  padding: 12px 16px; border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--ink) 3%, transparent);
-}
-.flowbar > div { display: flex; flex-direction: column; gap: 1px; min-width: 64px; }
-.flowbar b { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
-.flowbar span { font-size: 11px; color: var(--ink-3); }
-.flowbar .warn b { color: var(--warn); }
 
 /* 종류 배지 겸 선택기. 상태 선택기와 나란히 서므로 폭을 좁게 둔다. */
 .ckind {
@@ -415,4 +402,104 @@ input { font: inherit; }
   display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 6px;
   font-size: 10.5px; font-weight: 800; vertical-align: middle;
   background: color-mix(in srgb, #ae3ec9 16%, transparent); color: #9c36b5;
+}
+
+/* ── 민원실 보드 ─────────────────────────────────────── */
+
+/*
+ * 왼쪽 보드가 일의 방향이다 — 카페 글을 넣고(카페 글), 모델이 초안을 만들고(AI 초안),
+ * 사람이 확정한 것만 남는다(민원 목록). 세 칸을 한 화면에 세로로 세워두는 이유는
+ * **아직 안 본 초안이 몇 건인지**가 목록을 보는 내내 눈에 걸려 있어야 하기 때문이다.
+ */
+.civic-board { display: flex; align-items: stretch; min-height: 320px; }
+.civic-nav {
+  flex: 0 0 208px; display: flex; flex-direction: column; gap: 4px;
+  padding: 12px; border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+}
+.civic-nav button {
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 10px 12px; border: 1px solid transparent; border-radius: 10px;
+  background: transparent; color: var(--ink-2); cursor: pointer; font-family: inherit;
+}
+.civic-nav button:hover { background: var(--bg); }
+.civic-nav button[data-on='true'] {
+  background: var(--bg); border-color: var(--accent); color: var(--ink);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.civic-nav b { font-size: 13.5px; font-weight: 700; }
+.civic-nav span { font-size: 11px; color: var(--ink-3); }
+
+.civic-main { flex: 1; min-width: 0; }
+.civic-main > .chips { border-bottom: 1px solid var(--line); }
+.civic-main > p.dim { margin: 0; padding: 12px 16px 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.6; }
+.civic-h {
+  margin: 14px 0 0; padding: 0 16px 6px; font-size: 12px; font-weight: 700;
+  color: var(--ink-2); letter-spacing: .2px;
+}
+.civic-h .dim { font-weight: 500; color: var(--ink-3); }
+
+/*
+ * 흐름 요약. ★ 모수를 큰 숫자 옆에 반드시 적는다 —
+ * "평균 3일" 이 두 건에서 나온 값인지 백 건에서 나온 값인지 모르면 판단 근거가 못 된다.
+ */
+.civic-stat {
+  margin-top: auto; padding: 12px 4px 4px; display: flex; flex-wrap: wrap; gap: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+.civic-stat > div { display: flex; flex-direction: column; gap: 1px; min-width: 56px; }
+.civic-stat b { font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
+.civic-stat span { font-size: 10.5px; color: var(--ink-3); }
+.civic-stat .warn b { color: var(--warn); }
+
+/*
+ * 민원 목록은 카페 게시판을 그대로 옮긴 모양이다 — 부서 · 제목 · 날짜 한 줄.
+ * 누르면 그 자리에서 아래로 펼쳐진다. 민원 하나를 열어 들어가는 화면은 만들지 않는다:
+ * 목록으로 돌아오면 읽던 자리를 잃는다.
+ */
+.civic-list { list-style: none; margin: 0; padding: 0 0 8px; }
+.civic-list li { border-top: 1px solid var(--line); }
+.civic-list li[data-kind='notice'] { opacity: .62; }
+.civic-list li[data-kind='notice']:hover, .civic-list li[data-open='true'] { opacity: 1; }
+.civic-line {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 16px; border: 0; background: transparent; cursor: pointer;
+  font-family: inherit; text-align: left; color: var(--ink);
+}
+.civic-line:hover { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.civic-list li[data-open='true'] > .civic-line { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+
+/* 처리 부서가 이 화면의 목적이다 — 제목보다 앞에 두고 폭을 고정해 세로로 읽히게 한다 */
+.cdept {
+  flex: 0 0 148px; font-size: 11.5px; font-weight: 700; color: var(--ok);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cdept.none { color: var(--ink-3); font-weight: 500; }
+.cline-title {
+  flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cline-date { flex: none; font-size: 11.5px; color: var(--ink-3); }
+.cdue { margin-left: 6px; }
+.ktag {
+  display: inline-block; margin-right: 6px; padding: 1px 5px; border-radius: 5px;
+  font-size: 10.5px; font-weight: 800; vertical-align: middle;
+  background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-3);
+}
+.ktag.k-report { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.ktag.k-resolution { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.ktag.k-unknown { background: color-mix(in srgb, var(--warn) 18%, transparent); color: #e8590c; }
+
+.civic-detail {
+  display: flex; align-items: flex-start; flex-wrap: wrap; gap: 10px;
+  padding: 4px 16px 14px 16px;
+}
+.civic-detail .cbody { -webkit-line-clamp: unset; line-clamp: unset; display: block; }
+
+@media (max-width: 780px) {
+  .civic-board { flex-direction: column; }
+  .civic-nav { flex: none; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
+  .civic-nav button { flex: 1 1 140px; }
+  .civic-stat { flex-basis: 100%; margin-top: 4px; }
+  .cdept { flex-basis: 92px; }
 }

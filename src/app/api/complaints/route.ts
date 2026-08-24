@@ -23,10 +23,14 @@ import {
 import type { AuthorKind, PostKind } from '@/server/complaint-classify';
 import { confirmDraft, digestDue, DIGEST_HOURS, lastRun, runDigest } from '@/server/digest';
 import { addSource, countDue, deleteSource, editSource, listSources, runSources } from '@/server/complaint-crawl';
+import { addCafePost, deleteCafePost, listCafePosts, summarizeCafePost } from '@/server/cafe';
 
 export const dynamic = 'force-dynamic';
-/** 크롤은 상대 서버를 여러 번 두드린다. 기본 타임아웃 안에 못 끝나는 출처가 있다. */
-export const maxDuration = 120;
+/**
+ * 크롤은 상대 서버를 여러 번 두드리고, 카톡 분석·카페 요약은 모델을 부른다.
+ * 셋 다 기본 타임아웃 안에 못 끝날 수 있다.
+ */
+export const maxDuration = 300;
 
 /** 민원실 탭이 열릴 때·조작 뒤에만 부른다. 대시보드 3초 폴링에 얹지 않는다. */
 export async function GET(req: Request) {
@@ -50,6 +54,8 @@ export async function GET(req: Request) {
       digestDue: digestDue(digestRun),
       digestHours: DIGEST_HOURS,
       authors: await listAuthors(),
+      // 카페 글 보관함 — 사람이 붙여넣은 원문. 요약 실패도 여기 남는다
+      cafePosts: await listCafePosts(),
       sources,
       // 자동 크롤이 밀렸다는 것을 화면에 드러낸다. 몰래 긁지 않고 사람에게 알린다
       due: countDue(sources),
@@ -206,6 +212,34 @@ export async function POST(req: Request) {
       case 'crawl': {
         const results = await runSources(body.id ? String(body.id) : undefined);
         return NextResponse.json({ ok: true, results });
+      }
+
+      /*
+       * 카페 글 보관 + 요약. ★ 저장이 먼저고 요약이 나중이다 —
+       * 모델 호출이 실패해도 사람이 애써 복사한 본문은 남는다.
+       */
+      case 'cafe-add': {
+        const { post, duplicate } = await addCafePost({
+          title: String(body.title ?? ''),
+          url: String(body.url ?? ''),
+          body: String(body.body ?? ''),
+        });
+        if (duplicate) {
+          return NextResponse.json({ ok: true, post, duplicate: true, summary: null });
+        }
+        const summary = await summarizeCafePost(post.id);
+        return NextResponse.json({ ok: true, post, duplicate: false, summary });
+      }
+
+      /** 요약을 다시 돌린다. 키가 없어 실패했거나 결과가 시원찮을 때. */
+      case 'cafe-summarize': {
+        const summary = await summarizeCafePost(String(body.id ?? ''));
+        return NextResponse.json({ ok: true, summary });
+      }
+
+      case 'cafe-delete': {
+        await deleteCafePost(String(body.id ?? ''));
+        return NextResponse.json({ ok: true });
       }
 
       default:
