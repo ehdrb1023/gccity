@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import { db } from '@/lib/db';
+import { parseResolutionBody } from './complaint-classify';
 
 /**
  * 카톡 대화를 일정 시간마다 읽어 민원을 뽑는다.
@@ -221,6 +222,12 @@ export async function runDigest(opts: { hours?: number; now?: number } = {}): Pr
           .filter(Boolean)
           .map((m) => `${m!.sender}: ${String(m!.body ?? '').trim()}`)
           .join('\n');
+        /*
+         * ★ 부서는 모델에게 묻지 않고 규칙으로 뽑는다. 회신문이 "담당 부서인 ○○○에 문의한
+         *   결과" 로 정형화돼 있어 정규식이 더 정확하고, **어느 부서가 처리했는가**가 이 앱이
+         *   최종적으로 재려는 값이라 모델이 그럴듯하게 지어내면 통계가 조용히 틀어진다.
+         */
+        const parsed = parseResolutionBody(String(anchor.body ?? ''));
         return {
           dedup_key: `chat:${anchor.id}`,
           origin: 'chat',
@@ -233,6 +240,9 @@ export async function runDigest(opts: { hours?: number; now?: number } = {}): Pr
           posted_at: anchor.sent_at,
           reported_at: normalizeKind(it.kind) === 'report' ? anchor.sent_at : null,
           resolved_at: normalizeKind(it.kind) === 'resolution' ? anchor.sent_at : null,
+          department: parsed.department,
+          // "…까지" 약속이 있으면 회신은 왔어도 아직 끝난 건이 아니다
+          due_at: parsed.dueAt,
           room_id: anchor.room_id,
           message_id: anchor.id,
           ai_draft: true,
