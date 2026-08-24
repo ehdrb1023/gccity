@@ -997,6 +997,19 @@ type Complaint = {
   dueAt: string | null;
   aiDraft: boolean;
   aiNote: string | null;
+  cafePostId: string | null;
+  /** 같은 사안이 다른 경로로 한 번 더 들어온 것 */
+  duplicateOf: string | null;
+};
+
+type PairSide = { id: string; title: string; kind: string; at: string | null; origin: string };
+type PairSuggestion = {
+  id: string;
+  relation: 'resolves' | 'duplicate';
+  confidence: string | null;
+  reason: string | null;
+  left: PairSide;
+  right: PairSide;
 };
 
 type DigestRun = {
@@ -1125,6 +1138,7 @@ function Complaints() {
   const [sources, setSources] = useState<CrawlSource[]>([]);
   const [authors, setAuthors] = useState<CivicAuthor[]>([]);
   const [cafePosts, setCafePosts] = useState<CafePost[]>([]);
+  const [pairs, setPairs] = useState<PairSuggestion[]>([]);
   const [flow, setFlow] = useState<Flow | null>(null);
   const [digest, setDigest] = useState<DigestRun | null>(null);
   const [digestDue, setDigestDue] = useState(false);
@@ -1163,6 +1177,7 @@ function Complaints() {
       setSources(json.sources);
       setAuthors(json.authors ?? []);
       setCafePosts(json.cafePosts ?? []);
+      setPairs(json.pairs ?? []);
       setFlow(json.flow ?? null);
       setDigest(json.digest ?? null);
       setDigestDue(Boolean(json.digestDue));
@@ -1258,8 +1273,19 @@ function Complaints() {
     }
   };
 
-  const confirmed = items.filter((c) => !c.aiDraft);
-  const drafts = items.filter((c) => c.aiDraft);
+  /*
+   * ★ 이어진 회신은 목록에 **따로 세우지 않는다.** 민원과 회신이 두 줄로 나란히 있으면
+   *   같은 사안이 두 건으로 읽히고, "무엇이 어떻게 끝났나" 를 보려고 두 줄을 눈으로
+   *   짝지어야 한다. 이어둔 것은 민원 줄 하나로 합쳐 보여준다.
+   * ★ 중복으로 판정된 글도 목록에서 내린다. 지운 것은 아니고 가려둔 것이다.
+   */
+  const resolutionFor = new Map<string, Complaint>();
+  for (const c of items) if (c.resolutionOf) resolutionFor.set(c.resolutionOf, c);
+
+  const visible = items.filter((c) => !c.duplicateOf && !c.resolutionOf);
+  const hidden = items.length - visible.length;
+  const confirmed = visible.filter((c) => !c.aiDraft);
+  const drafts = visible.filter((c) => c.aiDraft);
   const chatDrafts = drafts.filter((c) => c.origin === 'chat');
   const cafeDrafts = drafts.filter((c) => c.origin !== 'chat');
 
@@ -1269,7 +1295,10 @@ function Complaints() {
     <section className="panel">
       <header>
         <h2>민원실</h2>
-        <span className="count">확정 {confirmed.length}건 · 초안 {drafts.length}건 · 방과 무관한 하나의 목록이다</span>
+        <span className="count">
+          확정 {confirmed.length}건 · 초안 {drafts.length}건
+          {hidden > 0 && ` · 합쳐지거나 중복으로 내린 것 ${hidden}건`}
+        </span>
         <div className="spacer" />
         <div className="hdr-actions">
           <button className="btn ghost" onClick={() => setPanel(panel === 'authors' ? 'none' : 'authors')}>
@@ -1303,6 +1332,28 @@ function Complaints() {
             }}
           >
             지금 분석
+          </button>
+          <button
+            className="btn"
+            disabled={busy}
+            title="같은 사안이 두 번 들어온 것을 찾아 제안한다 (이어지지는 않는다)"
+            onClick={async () => {
+              setMsg('짝을 찾는 중…');
+              const json = await act({ action: 'pair-suggest' });
+              if (!json) { setMsg(null); return; }
+              const r = json.pair as { scanned: number; found: number; added: number; error: string | null };
+              setMsg(
+                r.error
+                  ? `짝 찾기 실패 — ${r.error}`
+                  : r.added > 0
+                    ? `${r.scanned}건을 보고 ${r.added}건을 제안했다 — 아래에서 확인할 것`
+                    : `${r.scanned}건을 봤지만 새로 제안할 짝이 없다`,
+              );
+              if ((r.added ?? 0) > 0) goto('list');
+              await reload(status, q, kind);
+            }}
+          >
+            짝 찾기
           </button>
         </div>
       </header>
@@ -1402,6 +1453,62 @@ function Complaints() {
 
       {panel === 'sources' && (
         <Sources sources={sources} busy={busy} act={act} reload={() => reload(status, q, kind)} onCrawl={crawl} />
+      )}
+
+      {/*
+        ★ 모델이 찾아낸 짝은 **제안일 뿐**이다. 사람이 누르기 전에는 아무것도 이어지지 않는다.
+          자동으로 엮으면 틀린 짝이 조용히 통계에 섞이고, 그렇게 어긋난 "평균 처리 3일" 은
+          아무도 못 알아챈다.
+      */}
+      {pairs.length > 0 && (
+        <div className="pairbox">
+          <p>
+            <b>모델이 같은 사안으로 본 짝 {pairs.length}건</b> — 아직 이어지지 않았다.
+            맞으면 [묶기], 아니면 [아니다]. <b>물리친 짝은 다시 제안하지 않는다.</b>
+          </p>
+          <ul>
+            {pairs.map((p) => (
+              <li key={p.id}>
+                <span className={`ptag ${p.relation}`}>
+                  {p.relation === 'resolves' ? '민원 ↔ 해결' : '같은 글 중복'}
+                </span>
+                <span className="pmeta">
+                  <span className="pline">
+                    {p.relation === 'resolves' ? '민원' : '먼저'} · {p.right.title}
+                  </span>
+                  <span className="pline">
+                    {p.relation === 'resolves' ? '해결' : '나중'} · {p.left.title}
+                  </span>
+                  {/* 왜 같은 사안으로 봤는지. 누를지 말지 판단하는 근거다 */}
+                  <span className="preason">
+                    🤖 {p.confidence} · {p.reason}
+                  </span>
+                </span>
+                <button
+                  className="btn primary"
+                  disabled={busy}
+                  onClick={async () => {
+                    await after(
+                      await act({ action: 'pair-accept', id: p.id }),
+                      p.relation === 'resolves' ? '민원과 해결을 합쳤다' : '중복으로 내렸다',
+                    );
+                  }}
+                >
+                  묶기
+                </button>
+                <button
+                  className="btn ghost"
+                  disabled={busy}
+                  onClick={async () => {
+                    await after(await act({ action: 'pair-reject', id: p.id }));
+                  }}
+                >
+                  아니다
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {linking && (
@@ -1548,6 +1655,7 @@ function Complaints() {
                     <CivicLine
                       key={c.id}
                       c={c}
+                      fix={resolutionFor.get(c.id)}
                       open={openId === c.id}
                       onToggle={() => setOpenId(openId === c.id ? null : c.id)}
                       {...rowProps}
@@ -1636,32 +1744,54 @@ type RowProps = {
  */
 function CivicLine({
   c,
+  fix,
   open,
   onToggle,
   ...rest
-}: { c: Complaint; open: boolean; onToggle: () => void } & RowProps) {
+}: { c: Complaint; fix?: Complaint; open: boolean; onToggle: () => void } & RowProps) {
+  /* 회신이 붙어 있으면 부서·마감은 회신 쪽 값이 맞다 — 민원 글에는 없는 정보다 */
+  const dept = fix?.department ?? c.department;
+  const agency = fix?.agency ?? c.agency;
+  const dueAt = fix?.dueAt ?? c.dueAt;
+  const days =
+    c.reportedAt && c.resolvedAt
+      ? Math.floor((Date.parse(c.resolvedAt) - Date.parse(c.reportedAt)) / 86_400_000)
+      : null;
+
   return (
-    <li data-kind={c.kind} data-open={open}>
+    <li data-kind={c.kind} data-open={open} data-fixed={fix ? 'true' : 'false'}>
       <button className="civic-line" onClick={onToggle}>
         {/*
           ★ 부서 칸에 외부 기관을 그냥 적지 않는다. 시청 과·팀과 한 줄에 섞이면
             "어느 과로 가나" 를 눈으로 세는 순간 답이 틀어진다. 넘긴 건은 넘겼다고 적는다.
         */}
-        <span className={`cdept ${c.department ? '' : c.agency ? 'ext' : 'none'}`}>
-          {c.department ?? (c.agency ? `외부 · ${c.agency}` : c.kind === 'report' ? '배분 전' : '—')}
+        <span className={`cdept ${dept ? '' : agency ? 'ext' : 'none'}`}>
+          {dept ?? (agency ? `외부 · ${agency}` : c.kind === 'report' ? '배분 전' : '—')}
         </span>
         <span className="cline-title">
           {c.aiDraft && <span className="aibadge">AI 초안</span>}
           <span className={`ktag k-${c.kind}`}>{KIND_LABEL[c.kind]}</span>
           {c.title}
-          {c.dueAt && <span className="cdue">⏳</span>}
+          {dueAt && <span className="cdue">⏳</span>}
         </span>
+        {/* 해결된 민원은 걸린 날수를 줄에 적는다 — 목록을 훑는 것만으로 흐름이 읽힌다 */}
+        {fix && <span className="cfix">해결{days === null ? '' : days === 0 ? ' · 당일' : ` · ${days}일`}</span>}
         <span className="cline-date">{dayLabel(c.reportedAt ?? c.postedAt ?? c.createdAt)}</span>
       </button>
 
       {open && (
         <div className="civic-detail">
           <CivicDetail c={c} {...rest} />
+          {/*
+            민원과 해결 내용을 한 자리에 둔다. 두 줄로 갈라두면 같은 사안이 두 건으로
+            읽히고, "무엇이 어떻게 끝났나" 를 보려고 사람이 눈으로 짝을 지어야 한다.
+          */}
+          {fix && (
+            <div className="civic-fix">
+              <h5>해결 내용 · {dayLabel(fix.postedAt ?? fix.createdAt)}</h5>
+              <CivicDetail c={fix} {...rest} />
+            </div>
+          )}
         </div>
       )}
     </li>

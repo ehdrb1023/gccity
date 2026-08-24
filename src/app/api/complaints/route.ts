@@ -24,6 +24,7 @@ import type { AuthorKind, PostKind } from '@/server/complaint-classify';
 import { confirmDraft, digestDue, DIGEST_HOURS, lastRun, runDigest } from '@/server/digest';
 import { addSource, countDue, deleteSource, editSource, listSources, runSources } from '@/server/complaint-crawl';
 import { addCafePost, deleteCafePost, listCafePosts, summarizeCafePost } from '@/server/cafe';
+import { acceptPair, listPairs, rejectPair, suggestPairs } from '@/server/pair';
 
 export const dynamic = 'force-dynamic';
 /**
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
      *   화면은 조작할 때마다 이 응답 하나를 기다리므로 그 지연이 그대로 체감된다.
      *   새 조회를 넣을 때도 이 배열에 얹을 것 — 밖에서 따로 await 하지 말 것.
      */
-    const [complaints, counts, flow, digestRun, authors, cafePosts, sources] = await Promise.all([
+    const [complaints, counts, flow, digestRun, authors, cafePosts, sources, pairs] = await Promise.all([
       listComplaints({
         status: url.searchParams.get('status') ?? 'all',
         kind: url.searchParams.get('kind') ?? 'all',
@@ -56,6 +57,8 @@ export async function GET(req: Request) {
       // 카페 글 보관함 — 사람이 붙여넣은 원문. 요약 실패도 여기 남는다
       listCafePosts(),
       listSources(),
+      // 모델이 제안한 짝. ★ 아직 이어진 것이 아니다 — 사람이 눌러야 이어진다
+      listPairs(),
     ]);
 
     return NextResponse.json({
@@ -70,6 +73,7 @@ export async function GET(req: Request) {
       digestHours: DIGEST_HOURS,
       authors,
       cafePosts,
+      pairs,
       sources,
       // 자동 크롤이 밀렸다는 것을 화면에 드러낸다. 몰래 긁지 않고 사람에게 알린다
       due: countDue(sources),
@@ -253,6 +257,23 @@ export async function POST(req: Request) {
 
       case 'cafe-delete': {
         await deleteCafePost(String(body.id ?? ''));
+        return NextResponse.json({ ok: true });
+      }
+
+      /*
+       * 짝 찾기. ★ 제안만 만든다 — 이 호출로 이어지는 것은 하나도 없다.
+       * 자동으로 엮으면 틀린 짝이 조용히 통계에 섞이고 아무도 못 알아챈다.
+       */
+      case 'pair-suggest': {
+        return NextResponse.json({ ok: true, pair: await suggestPairs() });
+      }
+
+      case 'pair-accept': {
+        return NextResponse.json({ ok: true, ...(await acceptPair(String(body.id ?? ''))) });
+      }
+
+      case 'pair-reject': {
+        await rejectPair(String(body.id ?? ''));
         return NextResponse.json({ ok: true });
       }
 

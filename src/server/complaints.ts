@@ -66,6 +66,8 @@ export type Complaint = {
   aiNote: string | null;
   /** 어느 카페 글에서 나온 초안인가. 원문을 되짚을 때 쓴다 */
   cafePostId: string | null;
+  /** 같은 사안이 다른 경로로 한 번 더 들어온 것. 지우지 않고 가리키기만 한다 */
+  duplicateOf: string | null;
 };
 
 /** 목록에 넣을 한 건. 크롤러와 붙여넣기 파서가 공통으로 만든다. */
@@ -286,7 +288,7 @@ export function parsePastedList(text: string, now = Date.now()): ComplaintDraft[
 
 const SELECT =
   'id, origin, title, url, author, board, posted_at, body, category, status, note, room_id, message_id, created_at, ' +
-  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, agency, due_at, ai_draft, ai_note, cafe_post_id';
+  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, agency, due_at, ai_draft, ai_note, cafe_post_id, duplicate_of';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toComplaint(r: any): Complaint {
@@ -317,6 +319,7 @@ function toComplaint(r: any): Complaint {
     aiDraft: Boolean(r.ai_draft),
     aiNote: r.ai_note ?? null,
     cafePostId: r.cafe_post_id ?? null,
+    duplicateOf: r.duplicate_of ?? null,
   };
 }
 
