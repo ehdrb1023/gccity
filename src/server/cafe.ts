@@ -3,7 +3,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { parseResolutionBody } from './complaint-classify';
+import { parseDatedTitle, parseResolutionBody } from './complaint-classify';
 import { normalizeConfidence, normalizeKind } from './digest';
 
 /**
@@ -31,6 +31,8 @@ export type CafePost = {
   title: string | null;
   url: string | null;
   body: string;
+  /** 사람이 적어 넣은 **게시판 작성일**. 본문에 시각 마커가 없는 글이 훨씬 많다 */
+  postedAt: string | null;
   createdAt: string;
   summarizedAt: string | null;
   ok: boolean | null;
@@ -72,6 +74,18 @@ const SYSTEM = [
   '- 한국어로 쓴다. 원문 표현을 살리되 욕설·인신공격·개인 신상은 옮기지 않는다.',
 ].join('\n');
 
+/**
+ * 사람이 친 날짜(`2026-08-21`)를 한국시간 그날 0시로 읽는다.
+ * ★ 시간대를 붙이지 않으면 브라우저·서버 시간대에 따라 하루가 밀린다 —
+ *   그러면 소요일이 통째로 하루씩 어긋난다.
+ */
+export function isoFromDay(day: string | undefined | null): string | null {
+  const d = String(day ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+  const t = Date.parse(`${d}T00:00:00+09:00`);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
 /** 같은 글을 두 번 붙여넣어도 한 건이다. 공백 차이로 갈리지 않게 정규화한 뒤 해시한다. */
 export function bodyHash(body: string): string {
   return createHash('md5').update(body.replace(/\s+/g, ' ').trim()).digest('hex');
@@ -84,6 +98,7 @@ function toPost(r: any): CafePost {
     title: r.title ?? null,
     url: r.url ?? null,
     body: r.body ?? '',
+    postedAt: r.posted_at ?? null,
     createdAt: r.created_at,
     summarizedAt: r.summarized_at ?? null,
     ok: r.ok ?? null,
@@ -95,7 +110,7 @@ function toPost(r: any): CafePost {
 export async function listCafePosts(limit = 100): Promise<CafePost[]> {
   const { data, error } = await db()
     .from('cafe_posts')
-    .select('id, title, url, body, created_at, summarized_at, ok, error, drafted')
+    .select('id, title, url, body, posted_at, created_at, summarized_at, ok, error, drafted')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw new Error(`카페 글 조회 실패: ${error.message}`);
@@ -109,6 +124,8 @@ export async function listCafePosts(limit = 100): Promise<CafePost[]> {
 export async function addCafePost(input: {
   title?: string;
   url?: string;
+  /** 게시판에 적힌 작성일 (`YYYY-MM-DD`). 없어도 된다 */
+  postedAt?: string;
   body: string;
 }): Promise<{ post: CafePost; duplicate: boolean }> {
   const body = input.body.trim();
@@ -117,7 +134,7 @@ export async function addCafePost(input: {
   const hash = bodyHash(body);
   const { data: existing } = await db()
     .from('cafe_posts')
-    .select('id, title, url, body, created_at, summarized_at, ok, error, drafted')
+    .select('id, title, url, body, posted_at, created_at, summarized_at, ok, error, drafted')
     .eq('body_hash', hash)
     .maybeSingle();
   if (existing) return { post: toPost(existing), duplicate: true };
@@ -129,8 +146,9 @@ export async function addCafePost(input: {
       url: input.url?.trim() || null,
       body: body.slice(0, 100_000),
       body_hash: hash,
+      posted_at: isoFromDay(input.postedAt),
     })
-    .select('id, title, url, body, created_at, summarized_at, ok, error, drafted')
+    .select('id, title, url, body, posted_at, created_at, summarized_at, ok, error, drafted')
     .single();
   if (error) throw new Error(`카페 글 저장 실패: ${error.message}`);
   return { post: toPost(data), duplicate: false };
@@ -158,7 +176,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
 
   const { data: post, error: readErr } = await db()
     .from('cafe_posts')
-    .select('id, title, url, body')
+    .select('id, title, url, body, posted_at')
     .eq('id', id)
     .maybeSingle();
   if (readErr) throw new Error(`카페 글 조회 실패: ${readErr.message}`);
@@ -198,6 +216,15 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
 
     // 부서·완료예정일·접수/회신 시각은 규칙이 뽑는다. 모델에게 묻지 않는다
     const parsed = parseResolutionBody(body);
+    /*
+     * 시각을 정하는 차례가 셋이다. 위가 이길수록 정확하다.
+     *   ① 본문의 시각 마커      분 단위. 있으면 이게 답이다
+     *   ② 사람이 친 작성일       날짜 단위. 마커 없는 글이 훨씬 많다
+     *   ③ 제목의 날짜            처리 글에서 **접수일**을 준다 ("2026년 8월 20일(목) … 민원")
+     * 아무것도 없으면 비운다. 담은 날을 접수일로 쓰지 않는다 — 소요일이 통째로 거짓이 된다.
+     */
+    const typedAt = (post as any).posted_at ?? null;
+    const titleAt = parseDatedTitle(String((post as any).title ?? ''))?.reportedAt ?? null;
 
     const drafts = items.map((it, i) => {
       const kind = normalizeKind(it.kind);
@@ -215,10 +242,11 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
         department: parsed.department,
         agency: parsed.agency,
         due_at: parsed.dueAt,
-        // 본문의 첫 시각 마커가 접수, 마지막이 회신이다. 없으면 비운다 — 지어내지 않는다
-        posted_at: parsed.receivedAt,
-        reported_at: parsed.receivedAt,
-        resolved_at: kind === 'resolution' ? parsed.repliedAt : null,
+        posted_at: typedAt ?? parsed.receivedAt,
+        // 처리 글이면 제목 날짜가 접수일이다. 본문 마커가 있으면 그게 이긴다
+        reported_at: parsed.receivedAt ?? (kind === 'resolution' ? titleAt : typedAt),
+        // 회신 시각 — 마커가 없으면 그 글이 올라온 날이 회신 날이다
+        resolved_at: kind === 'resolution' ? (parsed.repliedAt ?? typedAt) : null,
         cafe_post_id: post.id,
         ai_draft: true,
         ai_note: `${normalizeConfidence(it.confidence)} · ${it.reason} (카페 본문 요약)`.slice(0, 500),

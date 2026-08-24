@@ -240,6 +240,7 @@ export async function POST(req: Request) {
         const { post, duplicate } = await addCafePost({
           title: String(body.title ?? ''),
           url: String(body.url ?? ''),
+          postedAt: String(body.postedAt ?? ''),
           body: String(body.body ?? ''),
         });
         if (duplicate) {

@@ -1109,6 +1109,7 @@ type CafePost = {
   title: string | null;
   url: string | null;
   body: string;
+  postedAt: string | null;
   createdAt: string;
   summarizedAt: string | null;
   ok: boolean | null;
@@ -2029,12 +2030,18 @@ function CafeBox({
 }) {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
+  /*
+   * 게시판 작성일. ★ 비워두면 접수·회신 시각이 통째로 빈다(본문에 시각 마커가 있는 글은
+   * 드물다). 그러면 목록이 "담은 날" 로 줄을 서서 게시판과 차례가 어긋난다.
+   * 여러 건을 이어 넣는 일이 많아 저장한 뒤에도 이 칸만 남겨둔다.
+   */
+  const [postedAt, setPostedAt] = useState('');
   const [body, setBody] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
 
   const submit = async () => {
     onMsg('저장하고 요약하는 중… (수십 초 걸릴 수 있다)');
-    const json = await act({ action: 'cafe-add', title, url, body });
+    const json = await act({ action: 'cafe-add', title, url, postedAt, body });
     if (!json) {
       onMsg(null);
       return;
@@ -2046,7 +2053,7 @@ function CafeBox({
     }
     setTitle('');
     setUrl('');
-    setBody('');
+    setBody('');   // 작성일은 남긴다 — 같은 날 글을 여러 건 이어 넣는 일이 많다
     const s = json.summary as { ok: boolean; drafted: number; added: number; error: string | null } | null;
     if (s?.error) {
       // 본문은 저장됐다는 것을 분명히 말한다. 사람이 다시 복사하지 않아도 된다
@@ -2069,6 +2076,11 @@ function CafeBox({
         </p>
         <input value={title} placeholder="제목 (없으면 비워둘 것)" onChange={(e) => setTitle(e.target.value)} />
         <input value={url} placeholder="주소 (없으면 비워둘 것)" onChange={(e) => setUrl(e.target.value)} />
+        <label className="civic-field">
+          <span>작성일</span>
+          <input type="date" value={postedAt} onChange={(e) => setPostedAt(e.target.value)} />
+          <em>게시판에 적힌 날짜. 비우면 접수·회신 시각이 빈 채로 담긴다</em>
+        </label>
         <textarea
           value={body}
           rows={10}
@@ -2103,7 +2115,9 @@ function CafeBox({
                   )}
                 </span>
                 <span className="csub">
-                  {dayLabel(p.createdAt)} · {p.body.length}자
+                  {p.postedAt ? `작성 ${dayLabel(p.postedAt)}` : `담은 날 ${dayLabel(p.createdAt)} · ⚠️ 작성일 없음`}
+                  {' · '}
+                  {p.body.length}자
                   {/* ★ 실패를 숨기지 않는다. 0건인 것과 안 돌아간 것은 겉보기가 같다 */}
                   {p.summarizedAt == null
                     ? ' · 아직 요약 안 함'

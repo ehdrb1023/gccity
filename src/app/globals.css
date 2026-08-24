@@ -334,6 +334,11 @@ input { font: inherit; }
   font-family: inherit; font-size: 13.5px;
 }
 .civic-panel textarea { resize: vertical; line-height: 1.5; }
+/* 날짜처럼 폭이 좁아도 되는 칸. 이름표와 설명을 옆에 붙인다 */
+.civic-field { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.civic-field > span { flex: none; font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+.civic-field input { flex: 0 0 auto; width: auto; margin-bottom: 0; }
+.civic-field > em { font-style: normal; font-size: 11.5px; color: var(--ink-3); }
 .civic-panel .mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12.5px; }
 .civic-panel input:focus, .civic-panel textarea:focus { outline: none; border-color: var(--accent); }
 .civic-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
