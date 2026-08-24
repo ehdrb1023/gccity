@@ -34,7 +34,7 @@ export type CafePost = {
   body: string;
   /** 사람이 적어 넣은 **게시판 작성일**. 본문에 시각 마커가 없는 글이 훨씬 많다 */
   postedAt: string | null;
-  /** 정책관이 **댓글로** 회신한 것. 본문과 갈라 받는다 */
+  /** 회신·처리 결과. 댓글이든 본문 아래 답변이든, 본문과 갈라 받는다 */
   reply: string | null;
   replyPostedAt: string | null;
   createdAt: string;
@@ -46,7 +46,7 @@ export type CafePost = {
 
 const ItemSchema = z.object({
   kind: z.string().describe('"report"(주민이 제기한 민원) 또는 "resolution"(시청·담당자의 회신·처리 결과)'),
-  part: z.string().describe('이 항목이 나온 칸. "본문" 또는 "댓글"'),
+  part: z.string().describe('이 항목이 나온 칸. "본문" 또는 "회신"'),
   title: z.string().describe('민원 제목. 40자 이내의 명사구'),
   summary: z.string().describe('무엇을 요구하거나 알린 것인지 세 문장 이내. 장황한 원문을 사람이 훑을 수 있게 줄인다'),
   category: z.string().describe('교통·환경·공원·재건축·행정 같은 짧은 분류 한 낱말'),
@@ -74,10 +74,13 @@ const SYSTEM = [
   '규칙:',
   '- 글 하나에 민원이 하나면 items 도 하나다. 문단마다 쪼개지 말 것.',
   '- 한 글이 서로 다른 사안 여럿을 담고 있을 때만 나눈다.',
-  '- **[댓글] 칸이 함께 오면 그것은 본문 민원에 대한 회신이다.** 그때는 items 를 정확히',
-  '  둘로 낸다 — 본문에서 report 하나(part="본문"), 댓글에서 resolution 하나(part="댓글").',
+  '- **[회신] 칸이 함께 오면 그것은 본문 민원의 처리 결과다.** 댓글일 수도, 본문 아래에',
+  '  덧붙은 답변일 수도, 담당자가 따로 알려온 결론일 수도 있다. 그때는 items 를 정확히',
+  '  둘로 낸다 — 본문에서 report 하나(part="본문"), 회신에서 resolution 하나(part="회신").',
   '  둘을 한 항목으로 합치지 마라. 합치면 민원이 무엇이었는지가 통째로 사라진다.',
-  '- [댓글] 칸이 없으면 part 는 모두 "본문" 이다.',
+  '- 회신 항목의 요약은 **무엇이 어떻게 됐는지**로 쓴다 — 어느 부서가 무엇을 확인했고,',
+  '  무엇을 하기로 했으며, 언제까지인지. "회신을 받았습니다" 같은 껍데기는 적지 마라.',
+  '- [회신] 칸이 없으면 part 는 모두 "본문" 이다.',
   '- 주민이 길게 쓴 글일수록 **무엇을 해달라는 것인지**를 요약의 첫 문장에 둔다.',
   '- 민원이 아니면 items 를 빈 배열로 둔다. 억지로 만들어내지 말 것.',
   '- 한국어로 쓴다. 원문 표현을 살리되 욕설·인신공격·개인 신상은 옮기지 않는다.',
@@ -137,7 +140,7 @@ export async function addCafePost(input: {
   url?: string;
   /** 게시판에 적힌 작성일 (`YYYY-MM-DD`). 없어도 된다 */
   postedAt?: string;
-  /** 정책관이 댓글로 단 회신. 있으면 민원과 회신 두 건이 되고 그 자리에서 이어진다 */
+  /** 회신·처리 결과. 있으면 민원과 회신 두 건이 되고 그 자리에서 이어진다 */
   reply?: string;
   replyPostedAt?: string;
   body: string;
@@ -179,7 +182,7 @@ export type SummarizeResult = {
   ok: boolean;
   drafted: number;
   added: number;
-  /** 본문 민원과 댓글 회신을 그 자리에서 이었는가 */
+  /** 본문 민원과 회신을 그 자리에서 이었는가 */
   linked: boolean;
   error: string | null;
 };
@@ -223,8 +226,8 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
             '',
             '[본문]',
             body,
-            // 칸을 갈라서 준다 — "본문=민원, 댓글=회신" 이라는 구조를 모델이 추측할 일이 없다
-            ...(reply ? ['', '[댓글] (정책관·담당자의 회신)', reply] : []),
+            // 칸을 갈라서 준다 — "본문=민원, 회신=처리 결과" 라는 구조를 모델이 추측할 일이 없다
+            ...(reply ? ['', '[회신] (정책관·담당자의 회신·처리 결과)', reply] : []),
           ]
             .filter(Boolean)
             .join('\n'),
@@ -238,7 +241,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
 
     /*
      * 부서·완료예정일·접수/회신 시각은 규칙이 뽑는다. 모델에게 묻지 않는다.
-     * ★ 댓글이 있으면 부서는 **댓글 쪽**에 있다 — 회신문이 거기 적혀 있기 때문이다.
+     * ★ 회신 칸이 있으면 부서는 **그쪽**에 있다 — 회신문이 거기 적혀 있기 때문이다.
      */
     const parsed = parseResolutionBody(reply || body);
     /*
@@ -254,8 +257,9 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
 
     const drafts = items.map((it, i) => {
       const kind = normalizeKind(it.kind);
-      // 댓글에서 나온 항목은 회신이다. 본문 쪽 날짜·원문을 붙이면 안 된다
-      const fromReply = reply.length > 0 && String(it.part ?? '').includes('댓글');
+      // 회신 칸에서 나온 항목이다. 본문 쪽 날짜·원문을 붙이면 안 된다
+      const part = String(it.part ?? '');
+      const fromReply = reply.length > 0 && (part.includes('회신') || part.includes('댓글'));
       return {
         // 한 글에서 여러 건이 나와도 열쇠가 갈린다. 다시 요약해도 같은 자리를 덮지 않는다
         dedup_key: i === 0 ? `cafe:${post.id}` : `cafe:${post.id}:${i}`,
@@ -274,7 +278,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
         posted_at: fromReply ? (replyAt ?? typedAt) : (typedAt ?? parsed.receivedAt),
         // 처리 글이면 제목 날짜가 접수일이다. 본문 마커가 있으면 그게 이긴다
         reported_at: fromReply ? null : (parsed.receivedAt ?? (kind === 'resolution' ? titleAt : typedAt)),
-        // 회신 시각 — 마커가 없으면 그 글(댓글)이 올라온 날이 회신 날이다
+        // 회신 시각 — 마커가 없으면 회신이 올라온 날이 회신 날이다
         resolved_at: fromReply
           ? (parsed.repliedAt ?? replyAt ?? typedAt)
           : kind === 'resolution'
@@ -282,7 +286,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
             : null,
         cafe_post_id: post.id,
         ai_draft: true,
-        ai_note: `${normalizeConfidence(it.confidence)} · ${it.reason} (카페 ${fromReply ? '댓글' : '본문'} 요약)`.slice(0, 500),
+        ai_note: `${normalizeConfidence(it.confidence)} · ${it.reason} (카페 ${fromReply ? '회신' : '본문'} 요약)`.slice(0, 500),
         ai_model: MODEL,
       };
     });
@@ -300,7 +304,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
       /*
        * ★ 한 글 안에서 나온 민원과 회신은 **그 자리에서 잇는다.**
        *   "제목이 비슷하다고 자동으로 잇지 말 것" 이라는 규칙과 어긋나지 않는다 —
-       *   여기서는 추측이 아니라 **사람이 본문과 댓글을 한 글로 묶어 넣은 것** 자체가 근거다.
+       *   여기서는 추측이 아니라 **사람이 본문과 회신을 한 글로 묶어 넣은 것** 자체가 근거다.
        *   틀렸으면 화면에서 [잇기 해제] 로 풀 수 있다.
        */
       const made = (ins ?? []) as any[];
@@ -312,7 +316,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
           out.linked = true;
         } catch (e) {
           // 잇기가 실패해도 초안은 남는다. 사람이 화면에서 손으로 이으면 된다
-          console.error('[gccity] 카페 댓글 잇기 실패:', e instanceof Error ? e.message : String(e));
+          console.error('[gccity] 카페 회신 잇기 실패:', e instanceof Error ? e.message : String(e));
         }
       }
     }

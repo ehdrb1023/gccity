@@ -2040,9 +2040,10 @@ function CafeBox({
   const [postedAt, setPostedAt] = useState('');
   const [body, setBody] = useState('');
   /*
-   * 정책관이 **댓글로** 회신하는 글이 있다. 본문 칸에 몰아 넣으면 모델이 한 건으로 뭉개서
-   * 민원이 통째로 사라진다. 칸을 가르면 "본문=민원, 댓글=회신" 이라는 구조를 사람이
-   * 알려주는 셈이라 모델이 추측할 일이 없고, 그 둘이 그 자리에서 이어진다.
+   * 회신·처리 결과. 댓글일 수도, 본문 아래 덧붙은 답변일 수도, 담당자가 따로 알려온
+   * 결론일 수도 있다. 본문 칸에 몰아 넣으면 모델이 한 건으로 뭉개서 민원이 통째로
+   * 사라진다. 칸을 가르면 "본문=민원, 회신=처리 결과" 라는 구조를 사람이 알려주는
+   * 셈이라 모델이 추측할 일이 없고, 그 둘이 그 자리에서 이어진다.
    */
   const [reply, setReply] = useState('');
   const [replyPostedAt, setReplyPostedAt] = useState('');
@@ -2063,7 +2064,7 @@ function CafeBox({
     setTitle('');
     setUrl('');
     setBody('');
-    setReply('');   // 작성일 두 칸은 남긴다 — 같은 날 글을 여러 건 이어 넣는 일이 많다
+    setReply('');   // 날짜 두 칸은 남긴다 — 같은 날 글을 여러 건 이어 넣는 일이 많다
     const s = json.summary as
       | { ok: boolean; drafted: number; added: number; linked: boolean; error: string | null }
       | null;
@@ -2075,7 +2076,7 @@ function CafeBox({
     }
     onMsg(
       `저장하고 ${s?.added ?? 0}건을 AI 초안으로 올렸다` +
-        (s?.linked ? ' — 본문 민원과 댓글 회신을 이어 붙였다' : ''),
+        (s?.linked ? ' — 민원과 해결 결과를 이어 붙였다' : ''),
     );
     await reload();
     if ((s?.added ?? 0) > 0) onDone();
@@ -2104,24 +2105,25 @@ function CafeBox({
         />
 
         {/*
-          ★ 댓글 회신은 본문 칸에 섞지 말 것. 섞으면 모델이 한 건으로 뭉개 민원이 사라진다.
-            여기 넣으면 민원 한 건 + 회신 한 건이 되고 그 자리에서 이어진다.
+          ★ 회신은 본문 칸에 섞지 말 것. 섞으면 모델이 한 건으로 뭉개 민원이 사라진다.
+            여기 넣으면 민원 한 건 + 해결 한 건이 되고 그 자리에서 이어진다.
         */}
         <p className="dim">
-          정책관이 <b>댓글로</b> 회신한 글이면 아래에 그 댓글만 따로 넣을 것. 본문에 섞으면
-          한 건으로 뭉개진다. 넣으면 <b>민원 + 해결</b> 로 갈라 담고 그 자리에서 이어 붙인다.
+          이 민원이 <b>어떻게 처리됐는지</b>가 있으면 아래에 따로 넣을 것 — 정책관 댓글,
+          본문 아래 덧붙은 답변, 담당자가 알려온 결론 어느 것이든 된다. 본문에 섞으면 한 건으로
+          뭉개진다. 넣으면 <b>민원 + 해결</b> 로 갈라 담고 그 자리에서 이어 붙인다.
         </p>
         <textarea
           value={reply}
           rows={5}
-          placeholder="정책관·담당자의 댓글 회신 (없으면 비워둘 것)"
+          placeholder="회신 · 처리 결과 (없으면 비워둘 것)"
           onChange={(e) => setReply(e.target.value)}
         />
         {reply.trim() && (
           <label className="civic-field">
-            <span>댓글 작성일</span>
+            <span>회신일</span>
             <input type="date" value={replyPostedAt} onChange={(e) => setReplyPostedAt(e.target.value)} />
-            <em>이 날짜가 회신일이 된다 — 작성일과의 차이가 곧 처리 소요일이다</em>
+            <em>작성일과의 차이가 곧 처리 소요일이다</em>
           </label>
         )}
 
@@ -2130,7 +2132,7 @@ function CafeBox({
             저장하고 요약
           </button>
           <span className="dim">
-            본문 {body.trim().length}자{reply.trim() && ` · 댓글 ${reply.trim().length}자`}
+            본문 {body.trim().length}자{reply.trim() && ` · 회신 ${reply.trim().length}자`}
           </span>
         </div>
       </div>
@@ -2157,7 +2159,7 @@ function CafeBox({
                 <span className="csub">
                   {p.postedAt ? `작성 ${dayLabel(p.postedAt)}` : `담은 날 ${dayLabel(p.createdAt)} · ⚠️ 작성일 없음`}
                   {' · '}
-                  {p.body.length}자{p.reply ? ` · 댓글 ${p.reply.length}자` : ''}
+                  {p.body.length}자{p.reply ? ` · 회신 ${p.reply.length}자` : ''}
                   {/* ★ 실패를 숨기지 않는다. 0건인 것과 안 돌아간 것은 겉보기가 같다 */}
                   {p.summarizedAt == null
                     ? ' · 아직 요약 안 함'
