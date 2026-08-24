@@ -1000,6 +1000,9 @@ type Complaint = {
   cafePostId: string | null;
   /** 같은 사안이 다른 경로로 한 번 더 들어온 것 */
   duplicateOf: string | null;
+  /** 해결 내용 — 이 민원이 어떻게 처리됐는가. 부서·기관·예정일이 여기서 나온다 */
+  resolutionText: string | null;
+  resolutionSummary: string | null;
 };
 
 type PairSide = { id: string; title: string; kind: string; at: string | null; origin: string };
@@ -1157,6 +1160,10 @@ function Complaints() {
   /** 본문을 붙이는 중인 민원. 카페는 서버가 못 읽으니 사람이 열어 복사해 넣는다 */
   const [bodyFor, setBodyFor] = useState<Complaint | null>(null);
   const [bodyText, setBodyText] = useState('');
+  /** 해결 내용을 적는 중인 민원. 부서가 정해지는 유일한 자리다 */
+  const [fixFor, setFixFor] = useState<Complaint | null>(null);
+  const [fixText, setFixText] = useState('');
+  const [fixAt, setFixAt] = useState('');
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -1295,7 +1302,7 @@ function Complaints() {
   const chatDrafts = drafts.filter((c) => c.origin === 'chat');
   const cafeDrafts = drafts.filter((c) => c.origin !== 'chat');
 
-  const rowProps = { busy, act, after, linking, setLinking, setBodyFor, setBodyText };
+  const rowProps = { busy, act, after, linking, setLinking, setBodyFor, setBodyText, setFixFor, setFixText, setFixAt };
 
   return (
     <section className="panel">
@@ -1526,6 +1533,64 @@ function Complaints() {
         </div>
       )}
 
+      {/*
+        해결 내용 상자. ★ 이 앱에서 **부서가 정해지는 유일한 자리**다 —
+        저장하는 순간 담당 부서·회신 기관·완료 예정일·회신 시각을 이 글에서 규칙이 뽑는다.
+        무엇이 채워졌는지 그 자리에서 알려준다. 조용히 성공하지 않는다.
+      */}
+      {fixFor && (
+        <div className="civic-panel">
+          <p>
+            <b>{fixFor.title.slice(0, 50)}</b> 이 어떻게 처리됐는지 적는다. 담당자 회신문을
+            그대로 붙여넣으면 <b>담당 부서 · 회신 기관 · 완료 예정일 · 회신 시각</b>을 그 자리에서
+            뽑는다. 비워서 저장하면 해결 내용과 거기서 나온 값이 함께 지워지고 <b>확인 중</b>으로 돌아간다.
+          </p>
+          <textarea
+            value={fixText}
+            rows={7}
+            placeholder="담당자 회신문을 그대로 붙여넣기 (예: 본 민원의 담당 부서인 과천시청 공원녹지과 하천관리팀에서 …)"
+            onChange={(e) => setFixText(e.target.value)}
+          />
+          <label className="civic-field">
+            <span>회신일</span>
+            <input type="date" value={fixAt} onChange={(e) => setFixAt(e.target.value)} />
+            <em>본문에 시각 마커가 있으면 그게 이긴다. 둘 다 없으면 소요일이 안 나온다</em>
+          </label>
+          <div className="civic-row">
+            <button
+              className="btn primary"
+              disabled={busy}
+              onClick={async () => {
+                const json = await act({ action: 'resolution', id: fixFor.id, text: fixText, at: fixAt });
+                if (json) {
+                  const p = json.parsed ?? {};
+                  setMsg(
+                    fixText.trim()
+                      ? [
+                          p.department ? `부서 ${p.department}` : '⚠️ 담당 부서를 못 찾았다',
+                          p.agency ? `회신 기관 ${p.agency}` : null,
+                          p.resolvedAt ? `회신 ${new Date(p.resolvedAt).toLocaleDateString('ko-KR')}` : '⚠️ 회신 시각 없음',
+                          p.dueAt ? `⏳ ${new Date(p.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정 — 아직 안 끝났다` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : '해결 내용을 지웠다',
+                  );
+                  setFixFor(null);
+                  setFixText('');
+                  await reload(status, q, kind);
+                }
+              }}
+            >
+              해결 내용 저장
+            </button>
+            <button className="btn ghost" onClick={() => { setFixFor(null); setFixText(''); }}>
+              그만두기
+            </button>
+          </div>
+        </div>
+      )}
+
       {bodyFor && (
         <div className="civic-panel">
           <p>
@@ -1739,6 +1804,9 @@ type RowProps = {
   setLinking: (c: Complaint | null) => void;
   setBodyFor: (c: Complaint | null) => void;
   setBodyText: (s: string) => void;
+  setFixFor: (c: Complaint | null) => void;
+  setFixText: (s: string) => void;
+  setFixAt: (s: string) => void;
 };
 
 /**
@@ -1755,10 +1823,11 @@ function CivicLine({
   onToggle,
   ...rest
 }: { c: Complaint; fix?: Complaint; open: boolean; onToggle: () => void } & RowProps) {
-  /* 회신이 붙어 있으면 부서·마감은 회신 쪽 값이 맞다 — 민원 글에는 없는 정보다 */
-  const dept = fix?.department ?? c.department;
-  const agency = fix?.agency ?? c.agency;
-  const dueAt = fix?.dueAt ?? c.dueAt;
+  /* 해결 내용이 민원 행에 있으면 그 값이 먼저다. 이어둔 처리 글은 그 다음 */
+  const dept = c.department ?? fix?.department;
+  const agency = c.agency ?? fix?.agency;
+  const dueAt = c.dueAt ?? fix?.dueAt;
+  const solved = Boolean(c.resolutionText || fix);
   const days =
     c.reportedAt && c.resolvedAt
       ? Math.floor((Date.parse(c.resolvedAt) - Date.parse(c.reportedAt)) / 86_400_000)
@@ -1781,7 +1850,7 @@ function CivicLine({
           {dueAt && <span className="cdue">⏳</span>}
         </span>
         {/* 해결된 민원은 걸린 날수를 줄에 적는다 — 목록을 훑는 것만으로 흐름이 읽힌다 */}
-        {fix && <span className="cfix">해결{days === null ? '' : days === 0 ? ' · 당일' : ` · ${days}일`}</span>}
+        {solved && <span className="cfix">해결{days === null ? '' : days === 0 ? ' · 당일' : ` · ${days}일`}</span>}
         <span className="cline-date">{dayLabel(c.reportedAt ?? c.postedAt ?? c.createdAt)}</span>
       </button>
 
@@ -1789,15 +1858,30 @@ function CivicLine({
         <div className="civic-detail">
           <CivicDetail c={c} {...rest} />
           {/*
-            민원과 해결 내용을 한 자리에 둔다. 두 줄로 갈라두면 같은 사안이 두 건으로
-            읽히고, "무엇이 어떻게 끝났나" 를 보려고 사람이 눈으로 짝을 지어야 한다.
+            해결 내용은 이제 민원 행의 열이라 `CivicDetail` 안에서 이미 보인다.
+            여기 남는 것은 **이어둔 처리 글**뿐이다 — 열을 못 채운 옛 짝만 통째로 펼치고,
+            채워졌으면 한 줄로 줄여 [잇기 해제] 만 남긴다. 같은 글을 두 번 보이지 않게.
           */}
-          {fix && (
-            <div className="civic-fix">
-              <h5>해결 내용 · {dayLabel(fix.postedAt ?? fix.createdAt)}</h5>
-              <CivicDetail c={fix} {...rest} />
-            </div>
-          )}
+          {fix &&
+            (c.resolutionText ? (
+              <div className="civic-fixlink">
+                <span>이어둔 처리 글 · {fix.title.slice(0, 40)}</span>
+                <button
+                  className="btn ghost"
+                  disabled={rest.busy}
+                  onClick={async () => {
+                    await rest.after(await rest.act({ action: 'unlink', id: fix.id }));
+                  }}
+                >
+                  잇기 해제
+                </button>
+              </div>
+            ) : (
+              <div className="civic-fix">
+                <h5>해결 내용 · {dayLabel(fix.postedAt ?? fix.createdAt)}</h5>
+                <CivicDetail c={fix} {...rest} />
+              </div>
+            ))}
         </div>
       )}
     </li>
@@ -1818,6 +1902,9 @@ function CivicDetail({
   setLinking,
   setBodyFor,
   setBodyText,
+  setFixFor,
+  setFixText,
+  setFixAt,
 }: { c: Complaint } & RowProps) {
   return (
     /*
@@ -1908,6 +1995,17 @@ function CivicDetail({
             <p className="cfull">{c.body}</p>
           </div>
         )}
+        {/*
+          해결 내용 — 이 민원이 어떻게 처리됐는가. 민원 행에 붙어 있으므로 짝을 짓지 않아도
+          한 자리에서 읽힌다. 부서·회신 기관·완료 예정일이 전부 이 글에서 나온 값이다.
+        */}
+        {c.resolutionText && (
+          <div className="cpart cfixpart">
+            <h5>해결 내용{c.resolvedAt && <span className="dim"> · {dayLabel(c.resolvedAt)}</span>}</h5>
+            {c.resolutionSummary && <p>{c.resolutionSummary}</p>}
+            <p className="cfull dim">{c.resolutionText}</p>
+          </div>
+        )}
         {/* 왜 이걸 민원으로 봤는지. 확정할지 지울지 판단하는 근거다 */}
         {c.aiDraft && c.aiNote && <span className="cnote dim">🤖 {c.aiNote}</span>}
         {c.note && <span className="cnote">✎ {c.note}</span>}
@@ -1956,6 +2054,21 @@ function CivicDetail({
           }}
         >
           확정
+        </button>
+      )}
+      {/* ★ 부서가 정해지는 유일한 자리다. 처리 글 자신에게는 뜻이 없어 민원에만 붙인다 */}
+      {c.kind !== 'resolution' && (
+        <button
+          className={c.resolutionText ? 'btn' : 'btn ghost'}
+          disabled={busy}
+          title="이 민원이 어떻게 처리됐는지 적는다 — 부서·기관·예정일을 그 글에서 뽑는다"
+          onClick={() => {
+            setFixFor(c);
+            setFixText(c.resolutionText ?? '');
+            setFixAt(c.resolvedAt ? c.resolvedAt.slice(0, 10) : '');
+          }}
+        >
+          해결 내용{c.resolutionText ? ' ✓' : ''}
         </button>
       )}
       <button

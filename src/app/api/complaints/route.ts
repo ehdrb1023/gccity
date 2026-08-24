@@ -16,6 +16,7 @@ import {
   reclassifyAll,
   setAuthorKind,
   setKind,
+  setResolution,
   setStatus,
   unlinkResolution,
   type ComplaintStatus,
@@ -267,6 +268,19 @@ export async function POST(req: Request) {
        * 짝 찾기. ★ 제안만 만든다 — 이 호출로 이어지는 것은 하나도 없다.
        * 자동으로 엮으면 틀린 짝이 조용히 통계에 섞이고 아무도 못 알아챈다.
        */
+      /*
+       * 해결 내용을 적는다. ★ 부서·회신 기관·완료 예정일을 이 글에서 규칙이 뽑아 채운다 —
+       * 뽑아낸 값을 그대로 돌려주므로 화면이 "무엇이 채워졌는지" 를 사람에게 보여줄 수 있다.
+       */
+      case 'resolution': {
+        const parsed = await setResolution(String(body.id ?? ''), {
+          text: String(body.text ?? ''),
+          summary: String(body.summary ?? ''),
+          at: String(body.at ?? ''),
+        });
+        return NextResponse.json({ ok: true, parsed });
+      }
+
       case 'pair-suggest': {
         return NextResponse.json({ ok: true, pair: await suggestPairs() });
       }

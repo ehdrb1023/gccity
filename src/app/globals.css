@@ -514,6 +514,12 @@ input { font: inherit; }
 .cpart p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--ink); overflow-wrap: break-word; }
 /* 카톡 원문은 줄바꿈이 곧 발화 경계다. 눌러 없애면 여러 사람 말이 한 덩이가 된다 */
 .cpart p.cfull { white-space: pre-wrap; color: var(--ink-2); }
+/* 해결 내용은 민원 본문과 눈으로 갈려야 한다 — 왼쪽에 초록 줄을 세운다 */
+.cfixpart {
+  border-left: 3px solid color-mix(in srgb, var(--ok) 45%, transparent);
+  padding-left: 10px; margin-top: 10px;
+}
+.cfixpart > h5 { color: var(--ok); }
 
 /*
  * 민원 한 건은 **두 줄**이다 — 내용 줄과 버튼 줄.
@@ -569,6 +575,11 @@ input { font: inherit; }
   background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok);
 }
 .civic-fix { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.civic-fixlink {
+  display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px;
+  border-top: 1px dashed var(--line); font-size: 11.5px; color: var(--ink-3);
+}
+.civic-fixlink > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .civic-fix > h5 {
   margin: 0 0 6px; font-size: 11px; font-weight: 800; letter-spacing: .3px; color: var(--ok);
 }

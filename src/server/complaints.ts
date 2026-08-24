@@ -68,6 +68,13 @@ export type Complaint = {
   cafePostId: string | null;
   /** 같은 사안이 다른 경로로 한 번 더 들어온 것. 지우지 않고 가리키기만 한다 */
   duplicateOf: string | null;
+  /**
+   * 해결 내용 — 이 민원이 **어떻게 처리됐는가**. 담당자 회신문 그대로.
+   * ★ 부서·회신 기관·완료 예정일·회신 시각은 전부 이 칸에서 규칙이 뽑는다.
+   */
+  resolutionText: string | null;
+  /** 그 회신을 모델이 줄인 것. 원문과 나눠 담아 어디까지가 모델인지 화면에서 갈리게 한다 */
+  resolutionSummary: string | null;
 };
 
 /** 목록에 넣을 한 건. 크롤러와 붙여넣기 파서가 공통으로 만든다. */
@@ -288,7 +295,8 @@ export function parsePastedList(text: string, now = Date.now()): ComplaintDraft[
 
 const SELECT =
   'id, origin, title, url, author, board, posted_at, body, category, status, note, room_id, message_id, created_at, ' +
-  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, agency, due_at, ai_draft, ai_note, cafe_post_id, duplicate_of';
+  'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, agency, due_at, ai_draft, ai_note, cafe_post_id, duplicate_of, ' +
+  'resolution_text, resolution_summary';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toComplaint(r: any): Complaint {
@@ -320,6 +328,8 @@ function toComplaint(r: any): Complaint {
     aiNote: r.ai_note ?? null,
     cafePostId: r.cafe_post_id ?? null,
     duplicateOf: r.duplicate_of ?? null,
+    resolutionText: r.resolution_text ?? null,
+    resolutionSummary: r.resolution_summary ?? null,
   };
 }
 
@@ -645,7 +655,9 @@ export async function setKind(id: string, kind: PostKind): Promise<void> {
 export async function linkResolution(resolutionId: string, reportId: string): Promise<void> {
   if (resolutionId === reportId) throw new Error('같은 글끼리는 이을 수 없다');
   const { data: rows, error } = await db()
-    .from('complaints').select('id, kind, posted_at, reported_at').in('id', [resolutionId, reportId]);
+    .from('complaints')
+    .select('id, kind, posted_at, reported_at, resolution_text')
+    .in('id', [resolutionId, reportId]);
   if (error) throw new Error(`민원 조회 실패: ${error.message}`);
   const res = (rows ?? []).find((r: any) => r.id === resolutionId) as any;
   const rep = (rows ?? []).find((r: any) => r.id === reportId) as any;
@@ -657,12 +669,84 @@ export async function linkResolution(resolutionId: string, reportId: string): Pr
     .eq('id', resolutionId);
   if (e1) throw new Error(`잇기 실패: ${e1.message}`);
 
-  // 민원 글의 회신 시각 = 처리 글이 올라온 시각. 상태도 처리 완료로 옮긴다
-  const { error: e2 } = await db()
+  /*
+   * ★ 처리 글의 알맹이를 민원 행의 **해결 내용 열**로 옮겨 담는다.
+   *   이어두기만 하고 열을 비워두면, 회신이 이미 와 있는데도 민원 줄의 부서 칸이
+   *   "배분 전" 으로 남는다 — "아직 안 정해졌다" 와 겉보기가 같아 틀린 줄도 모른다.
+   *   이미 적어둔 것이 있으면 덮지 않는다. 사람이 손으로 쓴 것이 언제나 위다.
+   */
+  const { data: full } = await db()
     .from('complaints')
-    .update({ resolved_at: res.posted_at ?? null, status: 'done', updated_at: new Date().toISOString() })
-    .eq('id', reportId);
+    .select('body, summary, department, agency, due_at, resolution_text')
+    .eq('id', resolutionId)
+    .maybeSingle();
+  const src = (full ?? {}) as any;
+
+  const patch: Record<string, unknown> = {
+    resolved_at: res.posted_at ?? null,
+    status: 'done',
+    updated_at: new Date().toISOString(),
+  };
+  if (!rep.resolution_text && src.body) patch.resolution_text = String(src.body).slice(0, 8000);
+  if (src.summary) patch.resolution_summary = String(src.summary).slice(0, 1000);
+  if (src.department) patch.department = src.department;
+  if (src.agency) patch.agency = src.agency;
+  if (src.due_at) patch.due_at = src.due_at;
+
+  const { error: e2 } = await db().from('complaints').update(patch).eq('id', reportId);
   if (e2) throw new Error(`민원 갱신 실패: ${e2.message}`);
+}
+
+/**
+ * 해결 내용을 적는다(또는 지운다). 이 앱에서 부서가 정해지는 **유일한 자리**다.
+ *
+ * ★ 부서·회신 기관·완료 예정일·회신 시각은 모델이 아니라 규칙(`parseResolutionBody`)이
+ *   이 글에서 뽑는다. 이 값들이 최종적으로 재려는 숫자라, 모델이 그럴듯하게 지어내면
+ *   부서별 통계가 조용히 틀어진다.
+ */
+export async function setResolution(
+  id: string,
+  input: { text: string; summary?: string; at?: string },
+): Promise<{ department: string | null; agency: string | null; dueAt: string | null; resolvedAt: string | null }> {
+  const text = String(input.text ?? '').trim();
+
+  if (!text) {
+    // 비우면 회신에서 나온 값도 함께 거둔다 — 근거가 사라졌는데 결론만 남으면 안 된다
+    const { error } = await db()
+      .from('complaints')
+      .update({
+        resolution_text: null, resolution_summary: null,
+        department: null, agency: null, due_at: null, resolved_at: null,
+        status: 'doing', updated_at: new Date().toISOString(),
+      })
+      .eq('id', id);
+    if (error) throw new Error(`해결 내용 삭제 실패: ${error.message}`);
+    return { department: null, agency: null, dueAt: null, resolvedAt: null };
+  }
+
+  const parsed = parseResolutionBody(text);
+  const typed = /^\d{4}-\d{2}-\d{2}$/.test(String(input.at ?? '').trim())
+    ? new Date(Date.parse(`${input.at}T00:00:00+09:00`)).toISOString()
+    : null;
+  // 본문 마커(분 단위) → 사람이 친 회신일 → 그것도 없으면 비운다. 지금 시각으로 때우지 않는다
+  const resolvedAt = parsed.repliedAt ?? typed;
+
+  const { error } = await db()
+    .from('complaints')
+    .update({
+      resolution_text: text.slice(0, 8000),
+      resolution_summary: input.summary?.trim()?.slice(0, 1000) || null,
+      department: parsed.department,
+      agency: parsed.agency,
+      due_at: parsed.dueAt,
+      resolved_at: resolvedAt,
+      status: 'done',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) throw new Error(`해결 내용 저장 실패: ${error.message}`);
+
+  return { department: parsed.department, agency: parsed.agency, dueAt: parsed.dueAt, resolvedAt };
 }
 
 export async function unlinkResolution(resolutionId: string): Promise<void> {
