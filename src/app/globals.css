@@ -500,6 +500,16 @@ input { font: inherit; }
 .ktag.k-resolution { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
 .ktag.k-unknown { background: color-mix(in srgb, var(--warn) 18%, transparent); color: #e8590c; }
 
+/* 출처 표 — 카톡에서 온 것과 카페에서 담은 것을 목록에서 바로 가른다 */
+.otag {
+  display: inline-block; margin-right: 5px; padding: 1px 5px; border-radius: 5px;
+  font-size: 10.5px; font-weight: 700; vertical-align: middle;
+  border: 1px solid var(--line); color: var(--ink-3);
+}
+.otag.o-chat { background: color-mix(in srgb, #f59f00 16%, transparent); color: #b06a00; border-color: transparent; }
+.otag.o-paste { background: color-mix(in srgb, #1c7ed6 14%, transparent); color: #1864ab; border-color: transparent; }
+.otag.o-crawl { background: color-mix(in srgb, #1c7ed6 10%, transparent); color: #1971c2; border-color: transparent; }
+
 .civic-detail { padding: 2px 16px 14px 16px; }
 
 /*

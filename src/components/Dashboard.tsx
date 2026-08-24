@@ -1107,6 +1107,18 @@ const ORIGIN_LABEL: Record<Complaint['origin'], string> = {
   manual: '직접',
 };
 
+/*
+ * 접힌 줄에 붙는 짧은 출처 표. ★ 어디서 들어온 민원인지가 목록에서 바로 보여야 한다 —
+ * 카톡은 실시간이라 원문이 통째로 남고, 카페는 사람이 골라 넣은 것이라 성격이 다르다.
+ * 같은 사안이 두 경로로 들어와 있을 때 그것을 알아채는 첫 단서이기도 하다.
+ */
+const ORIGIN_TAG: Record<Complaint['origin'], string> = {
+  chat: '카톡',
+  paste: '카페',
+  crawl: '크롤',
+  manual: '직접',
+};
+
 type CafePost = {
   id: string;
   title: string | null;
@@ -1155,6 +1167,8 @@ function Complaints() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [status, setStatus] = useState<'all' | CivicStatus>('all');
   const [kind, setKind] = useState<'all' | PostKind>('all');
+  /** 출처로 걸러 보기. 서버까지 갈 일이 아니라 화면에서 자른다 */
+  const [origin, setOrigin] = useState<'all' | Complaint['origin']>('all');
   /** 잇기 중인 처리 글. 골라두면 민원 줄에 [여기에 잇기] 가 뜬다 */
   const [linking, setLinking] = useState<Complaint | null>(null);
   const [q, setQ] = useState('');
@@ -1272,6 +1286,7 @@ function Complaints() {
     if (b !== 'list') {
       setStatus('all');
       setKind('all');
+      setOrigin('all');
       setQ('');
     }
   };
@@ -1285,7 +1300,8 @@ function Complaints() {
   const resolutionFor = new Map<string, Complaint>();
   for (const c of items) if (c.resolutionOf) resolutionFor.set(c.resolutionOf, c);
 
-  const confirmed = items.filter((c) => !c.aiDraft && !c.duplicateOf && !c.resolutionOf);
+  const byOrigin = (c: Complaint) => origin === 'all' || c.origin === origin;
+  const confirmed = items.filter((c) => !c.aiDraft && !c.duplicateOf && !c.resolutionOf && byOrigin(c));
   /*
    * ★ 초안은 합치지 않는다. 회신 초안이 민원 줄 안으로 접혀 들어가면 [확정] 버튼이
    *   초안 보드에서 사라져, 사람이 검토할 길이 없어진다. 검토 대기열은 끝까지 평평하게 둔다.
@@ -1589,6 +1605,17 @@ function Complaints() {
                   </button>
                 ))}
                 <span className="dim">|</span>
+                {/* 출처 — 카톡에서 온 것과 카페에서 담은 것은 성격이 다르다 */}
+                <button data-on={origin === 'all'} onClick={() => setOrigin('all')}>
+                  모든 출처
+                </button>
+                <button data-on={origin === 'chat'} onClick={() => setOrigin('chat')}>
+                  카톡 {items.filter((c) => c.origin === 'chat' && !c.aiDraft && !c.duplicateOf && !c.resolutionOf).length}
+                </button>
+                <button data-on={origin === 'paste'} onClick={() => setOrigin('paste')}>
+                  카페 {items.filter((c) => c.origin === 'paste' && !c.aiDraft && !c.duplicateOf && !c.resolutionOf).length}
+                </button>
+                <span className="dim">|</span>
                 <button data-on={status === 'all'} onClick={() => setStatus('all')}>
                   전체 {counts.all ?? 0}
                 </button>
@@ -1607,7 +1634,11 @@ function Complaints() {
 
               {confirmed.length === 0 ? (
                 <div className="empty">
-                  <b>{q || status !== 'all' || kind !== 'all' ? '조건에 맞는 민원이 없다' : '확정된 민원이 아직 없다'}</b>
+                  <b>
+                    {q || status !== 'all' || kind !== 'all' || origin !== 'all'
+                      ? '조건에 맞는 민원이 없다'
+                      : '확정된 민원이 아직 없다'}
+                  </b>
                   <b>AI 초안</b> 에서 [확정] 을 누르면 여기로 온다.
                 </div>
               ) : (
@@ -1731,6 +1762,9 @@ function CivicLine({
         </span>
         <span className="cline-title">
           {c.aiDraft && <span className="aibadge">AI 초안</span>}
+          <span className={`otag o-${c.origin}`} title={c.board ?? ORIGIN_LABEL[c.origin]}>
+            {ORIGIN_TAG[c.origin]}
+          </span>
           <span className={`ktag k-${c.kind}`}>{KIND_LABEL[c.kind]}</span>
           {c.title}
           {dueAt && <span className="cdue">⏳</span>}
