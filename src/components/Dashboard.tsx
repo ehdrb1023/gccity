@@ -1107,7 +1107,7 @@ function Complaints() {
   const [flow, setFlow] = useState<Flow | null>(null);
   const [digest, setDigest] = useState<DigestRun | null>(null);
   const [digestDue, setDigestDue] = useState(false);
-  const [digestHours, setDigestHours] = useState(6);
+  const [digestHours, setDigestHours] = useState(24);
   /** 초안만 보기 — 모델이 넣은 것을 사람이 카페와 대조해 훑는 화면이다 */
   const [draftsOnly, setDraftsOnly] = useState(false);
   const [due, setDue] = useState(0);
@@ -1143,7 +1143,7 @@ function Complaints() {
       setFlow(json.flow ?? null);
       setDigest(json.digest ?? null);
       setDigestDue(Boolean(json.digestDue));
-      setDigestHours(json.digestHours ?? 6);
+      setDigestHours(json.digestHours ?? 24);
       setDue(json.due);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));

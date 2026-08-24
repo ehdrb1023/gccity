@@ -20,8 +20,12 @@ import { db } from '@/lib/db';
  *   "분석이 도는 줄 알았는데 아무것도 안 하고 있었다" 가 이 프로젝트가 제일 경계하는 실패다.
  */
 
-/** 기본 창 길이. 사람이 정한다 — 1시간짜리로 자주 돌리든 6시간짜리로 뜸하게 돌리든. */
-const DEFAULT_HOURS = Number(process.env.GCCITY_DIGEST_HOURS ?? 6);
+/**
+ * 기본 창 길이. **cron 주기와 같아야 한다** — `digestDue` 가 이 값으로 "밀렸다" 를 판정하기
+ * 때문이다. cron 이 하루 한 번인데 6으로 두면 하루 중 18시간이 늘 경고 상태가 된다.
+ * 거짓 경보는 경보가 없느니만 못하다.
+ */
+const DEFAULT_HOURS = Number(process.env.GCCITY_DIGEST_HOURS ?? 24);
 /** 아무리 밀려도 이보다 뒤로는 안 간다. 며칠치를 한 번에 넣으면 창이 통째로 흐려진다. */
 const MAX_LOOKBACK_H = 48;
 /** 한 번에 모델에게 주는 메시지 상한. 넘으면 오래된 것부터 자르고 그 사실을 기록한다. */
