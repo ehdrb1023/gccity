@@ -16,10 +16,17 @@ export async function GET(req: Request) {
   const roomId = url.searchParams.get('room');
 
   try {
+    // 시한이 지난 방 찾기 미리보기를 먼저 지운다 — 그래야 아래 조회가 지운 뒤 상태를 본다
     await expireStalePreviews();
-    const state = await getAppState();
-    const rooms = await listRooms();
-    const messages = roomId ? await listMessages(roomId) : [];
+    /*
+     * ★ 나머지 셋은 서로 상관이 없으니 한꺼번에 띄운다. 줄줄이 await 하면 3초마다
+     *   왕복 세 번을 차례로 기다리게 되고, 그 지연이 화면 반응 속도로 그대로 느껴진다.
+     */
+    const [state, rooms, messages] = await Promise.all([
+      getAppState(),
+      listRooms(),
+      roomId ? listMessages(roomId) : Promise.resolve([]),
+    ]);
 
     return NextResponse.json({
       ok: true,

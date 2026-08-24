@@ -36,26 +36,40 @@ export const maxDuration = 300;
 export async function GET(req: Request) {
   const url = new URL(req.url);
   try {
-    const sources = await listSources();
-    const digestRun = await lastRun();
-    return NextResponse.json({
-      ok: true,
-      complaints: await listComplaints({
+    /*
+     * ★ 한꺼번에 띄운다. 예전에는 `await` 을 일곱 번 줄줄이 걸었는데, 그러면 서로 아무
+     *   상관없는 조회가 **차례로** Supabase 를 왕복해 응답이 그 합만큼 늦어졌다.
+     *   화면은 조작할 때마다 이 응답 하나를 기다리므로 그 지연이 그대로 체감된다.
+     *   새 조회를 넣을 때도 이 배열에 얹을 것 — 밖에서 따로 await 하지 말 것.
+     */
+    const [complaints, counts, flow, digestRun, authors, cafePosts, sources] = await Promise.all([
+      listComplaints({
         status: url.searchParams.get('status') ?? 'all',
         kind: url.searchParams.get('kind') ?? 'all',
         q: url.searchParams.get('q') ?? '',
       }),
-      counts: await countByStatus(),
+      countByStatus(),
       // 흐름 요약 — 접수/처리 건수와 평균 처리일. 모수를 함께 내보낸다
-      flow: await getFlowStats(),
+      getFlowStats(),
+      lastRun(),
+      listAuthors(),
+      // 카페 글 보관함 — 사람이 붙여넣은 원문. 요약 실패도 여기 남는다
+      listCafePosts(),
+      listSources(),
+    ]);
+
+    return NextResponse.json({
+      ok: true,
+      complaints,
+      counts,
+      flow,
       // 마지막 카톡 분석 결과. 실패도 그대로 화면에 뜬다
       digest: digestRun,
       // cron 이 하루 한 번뿐이라(Hobby 제한) 밀린 것을 화면이 알려준다
       digestDue: digestDue(digestRun),
       digestHours: DIGEST_HOURS,
-      authors: await listAuthors(),
-      // 카페 글 보관함 — 사람이 붙여넣은 원문. 요약 실패도 여기 남는다
-      cafePosts: await listCafePosts(),
+      authors,
+      cafePosts,
       sources,
       // 자동 크롤이 밀렸다는 것을 화면에 드러낸다. 몰래 긁지 않고 사람에게 알린다
       due: countDue(sources),

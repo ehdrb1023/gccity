@@ -1172,8 +1172,14 @@ function Complaints() {
     }
   }, []);
 
+  /*
+   * ★ 검색어는 잠깐 기다렸다 보낸다. 글자마다 바로 쏘면 "과천대로" 를 치는 동안 요청이
+   *   네 번 날아가고, 늦게 도착한 앞 글자의 응답이 뒤 글자의 결과를 덮어쓴다.
+   *   화면이 느려 보이는 것도 대부분 이 자리다.
+   */
   useEffect(() => {
-    void reload(status, q, kind);
+    const t = setTimeout(() => void reload(status, q, kind), q ? 260 : 0);
+    return () => clearTimeout(t);
   }, [reload, status, q, kind]);
 
   const act = useCallback(
@@ -1641,7 +1647,13 @@ function CivicDetail({
   setBodyText,
 }: { c: Complaint } & RowProps) {
   return (
-    <>
+    /*
+     * ★ 두 줄로 못 박는다 — 내용 줄과 버튼 줄. 한 줄에 몰아넣으면 버튼이 제 너비를
+     *   고집하는 동안 본문 칸이 0 까지 쭈그러들어 글자가 세로로 한 자씩 떨어진다
+     *   (실측 2026-08-24, 왼쪽 보드가 생겨 본문 칸이 좁아지자 바로 터졌다).
+     */
+    <div className="citem">
+      <div className="citem-head">
       {/* 종류를 손으로 고치면 잠긴다 — 이후 재분류가 그 행을 덮지 않는다 */}
       <select
         className={`ckind k-${c.kind}`}
@@ -1706,7 +1718,9 @@ function CivicDetail({
         {c.body && <span className="cbody dim">{c.body.slice(0, 400)}{c.body.length > 400 ? '…' : ''}</span>}
         {c.note && <span className="cnote">✎ {c.note}</span>}
       </div>
+      </div>
 
+      <div className="citem-acts">
       {/* 짝짓기는 사람이 한다. 제목이 비슷하다고 자동으로 엮으면 통계가 조용히 틀린다 */}
       {c.kind === 'resolution' &&
         (c.resolutionOf ? (
@@ -1793,7 +1807,8 @@ function CivicDetail({
       >
         지우기
       </button>
-    </>
+      </div>
+    </div>
   );
 }
 
