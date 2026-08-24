@@ -358,8 +358,22 @@ export async function listComplaints(
     );
 }
 
+/**
+ * 상태별 건수. **목록에 실제로 뜨는 것만** 센다.
+ *
+ * ★ 예전에는 전부 셌다. 그러면 `새 민원 28` 을 눌렀는데 7줄만 뜨는 일이 생긴다 —
+ *   나머지 21건은 민원 줄 안으로 합쳐졌거나 중복으로 내린 것이라 화면에 없기 때문이다.
+ *   칩의 숫자와 눈앞의 줄 수가 다르면 사람은 화면이 뭔가 빠뜨렸다고 읽는다.
+ *   거르는 조건은 `Dashboard.tsx` 의 `confirmed` 와 같아야 한다. 한쪽만 고치지 말 것.
+ */
 export async function countByStatus(): Promise<Record<string, number>> {
-  const { data, error } = await db().from('complaints').select('status').limit(5000);
+  const { data, error } = await db()
+    .from('complaints')
+    .select('status')
+    .eq('ai_draft', false)
+    .is('duplicate_of', null)
+    .is('resolution_of', null)
+    .limit(5000);
   if (error) throw new Error(`민원 집계 실패: ${error.message}`);
   const out: Record<string, number> = { all: 0, new: 0, doing: 0, done: 0, drop: 0 };
   for (const r of data ?? []) {
@@ -677,9 +691,13 @@ export async function linkResolution(resolutionId: string, reportId: string): Pr
   const rep = (rows ?? []).find((r: any) => r.id === reportId) as any;
   if (!res || !rep) throw new Error('없는 민원이다');
 
+  /*
+   * 처리 글도 `처리 완료` 로 옮긴다. 민원 줄 안으로 접혀 화면에서 사라지는데 상태만
+   * `새 민원` 으로 남으면, 그 칩의 숫자와 눈앞의 줄 수가 영영 어긋난다.
+   */
   const { error: e1 } = await db()
     .from('complaints')
-    .update({ resolution_of: reportId, updated_at: new Date().toISOString() })
+    .update({ resolution_of: reportId, status: 'done', updated_at: new Date().toISOString() })
     .eq('id', resolutionId);
   if (e1) throw new Error(`잇기 실패: ${e1.message}`);
 
@@ -769,8 +787,11 @@ export async function unlinkResolution(resolutionId: string): Promise<void> {
   if (error) throw new Error(`민원 조회 실패: ${error.message}`);
   const reportId = (res as any)?.resolution_of;
 
+  // 다시 목록에 서므로 상태도 되돌린다. 잇기가 옮겨둔 것을 그대로 두면 안 된다
   const { error: e1 } = await db()
-    .from('complaints').update({ resolution_of: null, updated_at: new Date().toISOString() }).eq('id', resolutionId);
+    .from('complaints')
+    .update({ resolution_of: null, status: 'new', updated_at: new Date().toISOString() })
+    .eq('id', resolutionId);
   if (e1) throw new Error(`잇기 해제 실패: ${e1.message}`);
 
   // 민원 쪽 회신 시각도 걷어낸다. 남겨두면 짝이 없는데 처리된 것으로 잡힌다
@@ -781,10 +802,20 @@ export async function unlinkResolution(resolutionId: string): Promise<void> {
   }
 }
 
-/** 흐름 요약 — 접수 몇 건, 처리 몇 건, 평균 며칠. 모수(measured)를 함께 낸다. */
+/**
+ * 흐름 요약 — 접수 몇 건, 처리 몇 건, 평균 며칠. 모수(measured)를 함께 낸다.
+ *
+ * ★ **초안과 중복은 세지 않는다.** 초안은 사람이 확정하기 전이라 맞는지 모르는 값이고,
+ *   중복은 같은 사안을 두 번 세는 것이다. 둘 다 넣으면 "평균 처리 며칠" 이 조용히 부풀거나
+ *   줄어든다. 이어둔 처리 글은 센다 — 그것은 실제로 있었던 처리 한 건이다.
+ */
 export async function getFlowStats(): Promise<FlowStats> {
   const { data, error } = await db()
-    .from('complaints').select('kind, reported_at, resolved_at').limit(5000);
+    .from('complaints')
+    .select('kind, reported_at, resolved_at')
+    .eq('ai_draft', false)
+    .is('duplicate_of', null)
+    .limit(5000);
   if (error) throw new Error(`흐름 집계 실패: ${error.message}`);
   return flowStats(
     (data ?? []).map((r: any) => ({
