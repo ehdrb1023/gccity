@@ -481,6 +481,7 @@ input { font: inherit; }
   flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.cline-title .aibadge { margin-right: 5px; }
 .cline-date { flex: none; font-size: 11.5px; color: var(--ink-3); }
 .cdue { margin-left: 6px; }
 .ktag {
@@ -493,7 +494,19 @@ input { font: inherit; }
 .ktag.k-unknown { background: color-mix(in srgb, var(--warn) 18%, transparent); color: #e8590c; }
 
 .civic-detail { padding: 2px 16px 14px 16px; }
-.civic-detail .cbody { -webkit-line-clamp: unset; line-clamp: unset; display: block; }
+
+/*
+ * 펼친 안쪽에서는 요약도 원문도 **자르지 않는다.** 접혀 있다가 눌러서 연 것이라
+ * 여기서까지 두 줄로 잘라두면 사람이 원글을 다시 찾아 들어가야 한다.
+ */
+.cpart { margin-top: 8px; }
+.cpart h5 {
+  margin: 0 0 3px; font-size: 11px; font-weight: 700; letter-spacing: .3px; color: var(--ink-3);
+}
+.cpart h5 .dim { font-weight: 500; }
+.cpart p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--ink); overflow-wrap: break-word; }
+/* 카톡 원문은 줄바꿈이 곧 발화 경계다. 눌러 없애면 여러 사람 말이 한 덩이가 된다 */
+.cpart p.cfull { white-space: pre-wrap; color: var(--ink-2); }
 
 /*
  * 민원 한 건은 **두 줄**이다 — 내용 줄과 버튼 줄.

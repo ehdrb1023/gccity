@@ -1544,26 +1544,13 @@ function Complaints() {
               ) : (
                 <ul className="civic-list">
                   {confirmed.map((c) => (
-                    <li key={c.id} data-kind={c.kind} data-open={openId === c.id}>
-                      {/* 게시판처럼 한 줄 — 부서 · 제목 · 날짜. 누르면 아래가 열린다 */}
-                      <button className="civic-line" onClick={() => setOpenId(openId === c.id ? null : c.id)}>
-                        <span className={`cdept ${c.department ? '' : 'none'}`}>
-                          {c.department ?? (c.kind === 'report' ? '배분 전' : '—')}
-                        </span>
-                        <span className="cline-title">
-                          <span className={`ktag k-${c.kind}`}>{KIND_LABEL[c.kind]}</span>
-                          {c.title}
-                          {c.dueAt && <span className="cdue">⏳</span>}
-                        </span>
-                        <span className="cline-date">{dayLabel(c.reportedAt ?? c.postedAt ?? c.createdAt)}</span>
-                      </button>
-
-                      {openId === c.id && (
-                        <div className="civic-detail">
-                          <CivicDetail c={c} {...rowProps} />
-                        </div>
-                      )}
-                    </li>
+                    <CivicLine
+                      key={c.id}
+                      c={c}
+                      open={openId === c.id}
+                      onToggle={() => setOpenId(openId === c.id ? null : c.id)}
+                      {...rowProps}
+                    />
                   ))}
                 </ul>
               )}
@@ -1581,11 +1568,15 @@ function Complaints() {
               {chatDrafts.length === 0 ? (
                 <p className="dim">없다. 위 [지금 분석] 을 누르면 쌓인 대화에서 뽑는다.</p>
               ) : (
-                <ul className="civics">
+                <ul className="civic-list">
                   {chatDrafts.map((c) => (
-                    <li key={c.id} data-kind={c.kind}>
-                      <CivicDetail c={c} {...rowProps} />
-                    </li>
+                    <CivicLine
+                      key={c.id}
+                      c={c}
+                      open={openId === c.id}
+                      onToggle={() => setOpenId(openId === c.id ? null : c.id)}
+                      {...rowProps}
+                    />
                   ))}
                 </ul>
               )}
@@ -1594,11 +1585,15 @@ function Complaints() {
               {cafeDrafts.length === 0 ? (
                 <p className="dim">없다. 왼쪽 [카페 글] 에 본문을 붙여넣으면 여기 쌓인다.</p>
               ) : (
-                <ul className="civics">
+                <ul className="civic-list">
                   {cafeDrafts.map((c) => (
-                    <li key={c.id} data-kind={c.kind}>
-                      <CivicDetail c={c} {...rowProps} />
-                    </li>
+                    <CivicLine
+                      key={c.id}
+                      c={c}
+                      open={openId === c.id}
+                      onToggle={() => setOpenId(openId === c.id ? null : c.id)}
+                      {...rowProps}
+                    />
                   ))}
                 </ul>
               )}
@@ -1630,6 +1625,43 @@ type RowProps = {
   setBodyFor: (c: Complaint | null) => void;
   setBodyText: (s: string) => void;
 };
+
+/**
+ * 목록의 한 줄. 게시판처럼 **부서 · 제목 · 날짜** 만 보이다가, 누르면 그 자리에서 펼쳐진다.
+ *
+ * ★ 민원 목록과 AI 초안이 **같은 줄 모양**을 쓴다. 초안에서 줄곧 펼쳐 보여주다가
+ *   확정하면 접히는 식이면, 확정이 무엇을 바꾸는지 사람이 예측하지 못한다.
+ *   초안에서 달라지는 것은 `AI 초안` 배지와 [확정] 버튼 둘뿐이어야 한다.
+ */
+function CivicLine({
+  c,
+  open,
+  onToggle,
+  ...rest
+}: { c: Complaint; open: boolean; onToggle: () => void } & RowProps) {
+  return (
+    <li data-kind={c.kind} data-open={open}>
+      <button className="civic-line" onClick={onToggle}>
+        <span className={`cdept ${c.department ? '' : 'none'}`}>
+          {c.department ?? (c.kind === 'report' ? '배분 전' : '—')}
+        </span>
+        <span className="cline-title">
+          {c.aiDraft && <span className="aibadge">AI 초안</span>}
+          <span className={`ktag k-${c.kind}`}>{KIND_LABEL[c.kind]}</span>
+          {c.title}
+          {c.dueAt && <span className="cdue">⏳</span>}
+        </span>
+        <span className="cline-date">{dayLabel(c.reportedAt ?? c.postedAt ?? c.createdAt)}</span>
+      </button>
+
+      {open && (
+        <div className="civic-detail">
+          <CivicDetail c={c} {...rest} />
+        </div>
+      )}
+    </li>
+  );
+}
 
 /**
  * 민원 한 건의 속살. 목록에서는 제목을 눌렀을 때만 펼쳐지고, AI 초안 보드에서는 늘 펼쳐져 있다.
@@ -1687,23 +1719,21 @@ function CivicDetail({
       </select>
 
       <div className="cmeta">
-        <span className="ctitle">
-          {/* 모델이 넣은 것은 사람이 넣은 것과 반드시 구분해 보여준다 */}
-          {c.aiDraft && <span className="aibadge" title={c.aiNote ?? ''}>AI 초안</span>}
-          {c.url ? (
-            <a href={c.url} target="_blank" rel="noreferrer noopener">
-              {c.title}
-            </a>
-          ) : (
-            c.title
-          )}
-        </span>
+        {/* 제목은 바로 위 줄에 이미 있다. 여기서는 출처·시각·짝만 다시 적는다 */}
         <span className="csub">
           {c.board ?? ORIGIN_LABEL[c.origin]}
           {c.author && ` · ${c.author}`}
           {` · ${dayLabel(c.postedAt ?? c.createdAt)}`}
           {c.postedAt ? '' : ' (담은 날)'}
           {c.category && ` · #${c.category}`}
+          {c.url && (
+            <>
+              {' · '}
+              <a href={c.url} target="_blank" rel="noreferrer noopener">
+                원글 열기
+              </a>
+            </>
+          )}
         </span>
         {/* 접수 → 회신. 처리 글은 제목 날짜가 접수일이라 짝짓기 없이도 잡힌다 */}
         {(leadLabel(c.reportedAt, c.resolvedAt) || c.department) && (
@@ -1714,8 +1744,25 @@ function CivicDetail({
             {c.dueAt && ` · ⏳ ${new Date(c.dueAt).toLocaleDateString('ko-KR')}까지 조치 예정`}
           </span>
         )}
-        {c.summary && <span className="cbody">{c.summary}</span>}
-        {c.body && <span className="cbody dim">{c.body.slice(0, 400)}{c.body.length > 400 ? '…' : ''}</span>}
+
+        {/*
+          ★ 요약과 원문에 이름표를 붙인다. 둘 다 문단 모양이라 이름표가 없으면
+            어디까지가 모델이 줄인 것이고 어디부터가 사람이 쓴 말인지 갈리지 않는다.
+        */}
+        {c.summary && (
+          <div className="cpart">
+            <h5>요약{c.aiDraft && <span className="dim"> · 모델이 줄인 것</span>}</h5>
+            <p>{c.summary}</p>
+          </div>
+        )}
+        {c.body && (
+          <div className="cpart">
+            <h5>원문{c.origin === 'chat' && <span className="dim"> · 카톡 그대로</span>}</h5>
+            <p className="cfull">{c.body}</p>
+          </div>
+        )}
+        {/* 왜 이걸 민원으로 봤는지. 확정할지 지울지 판단하는 근거다 */}
+        {c.aiDraft && c.aiNote && <span className="cnote dim">🤖 {c.aiNote}</span>}
         {c.note && <span className="cnote">✎ {c.note}</span>}
       </div>
       </div>
