@@ -333,29 +333,56 @@ function toComplaint(r: any): Complaint {
   };
 }
 
-export async function listComplaints(
-  opts: { status?: string; q?: string; kind?: string; limit?: number } = {},
-): Promise<Complaint[]> {
-  let query = db().from('complaints').select(SELECT);
-  if (opts.status && opts.status !== 'all') query = query.eq('status', opts.status);
-  if (opts.kind && opts.kind !== 'all') query = query.eq('kind', opts.kind);
-  if (opts.q?.trim()) {
-    const like = `%${opts.q.trim().replace(/[%,]/g, ' ')}%`;
+/**
+ * 화면이 거는 거르개. 목록과 칩이 **같은 값**을 받아야 숫자가 맞는다.
+ *
+ * ★ `status` 는 칩마다 값이 달라서 여기 있어도 칩 집계에는 쓰지 않는다 —
+ *   `새 민원` 칩은 자기 상태만 세고, 나머지 거르개는 목록과 똑같이 받아야 한다.
+ */
+export type ComplaintFilter = { status?: string; kind?: string; q?: string; origin?: string };
+
+/**
+ * 거르개를 쿼리에 얹는 **유일한 자리**.
+ *
+ * ★ 목록과 칩이 이 함수를 함께 부른다. 새 거르개를 넣을 때 여기만 고치면
+ *   양쪽이 자동으로 같아진다 — 한쪽에만 넣어 어긋난 적이 있다(`origin`, 2026-08-24).
+ *   주석으로 "양쪽을 같이 고칠 것" 이라고 적어두는 것으로는 못 막았다.
+ */
+function applyFilter(query: any, f: ComplaintFilter, withStatus: boolean): any {
+  if (withStatus && f.status && f.status !== 'all') query = query.eq('status', f.status);
+  if (f.kind && f.kind !== 'all') query = query.eq('kind', f.kind);
+  if (f.origin && f.origin !== 'all') query = query.eq('origin', f.origin);
+  if (f.q?.trim()) {
+    const like = `%${f.q.trim().replace(/[%,]/g, ' ')}%`;
     query = query.or(`title.ilike.${like},note.ilike.${like},body.ilike.${like},category.ilike.${like}`);
   }
+  return query;
+}
+
+/**
+ * "목록에 실제로 뜨는 것" 의 SQL 쪽 정의. 순수 함수 쪽은 `@/lib/complaint-view` 의
+ * `isListed` 이고, 화면이 그것을 쓴다. 둘이 어긋나면 칩 숫자와 줄 수가 갈린다 —
+ * 회귀 테스트는 `src/lib/complaint-view.test.ts`.
+ */
+function applyListed(query: any): any {
+  return query.eq('ai_draft', false).is('duplicate_of', null).is('resolution_of', null);
+}
+
+export async function listComplaints(opts: ComplaintFilter & { limit?: number } = {}): Promise<Complaint[]> {
+  const query = applyFilter(db().from('complaints').select(SELECT), opts, true);
   const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(Math.min(opts.limit ?? 300, 500));
   if (error) throw new Error(`민원 목록 실패: ${error.message}`);
   // 원글 시각이 있으면 그 순, 없으면 담은 순. 목록을 게시판과 같은 차례로 읽게 한다
   // 접수일이 있으면 그 순 — 처리 글은 제목 날짜(접수일)가 그 민원의 시각이다
-  return (data ?? [])
-    .map(toComplaint)
-    .sort(
-      (a, b) =>
-        Date.parse(b.reportedAt ?? b.postedAt ?? b.createdAt) -
-        Date.parse(a.reportedAt ?? a.postedAt ?? a.createdAt),
-    );
+  // applyFilter 가 쿼리 빌더 타입을 `any` 로 넘겨서 여기서 한 번 못 박는다
+  const rows: Complaint[] = ((data ?? []) as any[]).map(toComplaint);
+  return rows.sort(
+    (a, b) =>
+      Date.parse(b.reportedAt ?? b.postedAt ?? b.createdAt) -
+      Date.parse(a.reportedAt ?? a.postedAt ?? a.createdAt),
+  );
 }
 
 /**
@@ -364,16 +391,18 @@ export async function listComplaints(
  * ★ 예전에는 전부 셌다. 그러면 `새 민원 28` 을 눌렀는데 7줄만 뜨는 일이 생긴다 —
  *   나머지 21건은 민원 줄 안으로 합쳐졌거나 중복으로 내린 것이라 화면에 없기 때문이다.
  *   칩의 숫자와 눈앞의 줄 수가 다르면 사람은 화면이 뭔가 빠뜨렸다고 읽는다.
- *   거르는 조건은 `Dashboard.tsx` 의 `confirmed` 와 같아야 한다. 한쪽만 고치지 말 것.
+ *
+ * ★ 화면이 건 거르개(종류·출처·검색어)를 **그대로 받는다.** 안 받으면 같은 증상이
+ *   되돌아온다 — 출처를 `카톡` 으로 걸러 7줄만 뜨는데 칩은 `전체 28` 을 보여준다.
+ *   `status` 만 빼는 이유는 칩마다 세는 상태가 다르기 때문이다.
+ *
+ * ⚠️ 남은 구멍: 여기는 5000건까지 세고 목록(`listComplaints`)은 300건까지만 가져온다.
+ *   확정 민원이 300건을 넘으면 칩과 줄 수가 다시 갈린다 — 지금 규모(수십 건)에서는
+ *   안 닿지만, 목록 상한을 손댈 때 이 숫자도 같이 볼 것.
  */
-export async function countByStatus(): Promise<Record<string, number>> {
-  const { data, error } = await db()
-    .from('complaints')
-    .select('status')
-    .eq('ai_draft', false)
-    .is('duplicate_of', null)
-    .is('resolution_of', null)
-    .limit(5000);
+export async function countByStatus(filter: ComplaintFilter = {}): Promise<Record<string, number>> {
+  const query = applyFilter(applyListed(db().from('complaints').select('status')), filter, false);
+  const { data, error } = await query.limit(5000);
   if (error) throw new Error(`민원 집계 실패: ${error.message}`);
   const out: Record<string, number> = { all: 0, new: 0, doing: 0, done: 0, drop: 0 };
   for (const r of data ?? []) {
@@ -381,6 +410,30 @@ export async function countByStatus(): Promise<Record<string, number>> {
     out[(r as any).status] = (out[(r as any).status] ?? 0) + 1;
   }
   return out;
+}
+
+/**
+ * 검토 대기 중인 초안 수 — 왼쪽 보드의 `AI 초안 12건 · 카톡 8 / 카페 4` 가 이것을 쓴다.
+ *
+ * ★ 목록 거르개(`ComplaintFilter`)를 **받지 않는다.** 출처·종류·검색어는 민원 목록 보드
+ *   안에서만 거는 것이고, 초안 보드는 그것과 무관하게 "아직 안 본 것이 몇 건인가" 를
+ *   답해야 한다. 여기에 거르개를 얹으면 민원 목록에서 출처를 고르는 순간 nav 숫자가
+ *   줄었다가, 눌러 들어가면 원래 건수가 나온다 — 고치려던 그 증상 그대로다.
+ *
+ * 거르는 조건은 화면의 `drafts` 와 같다: 초안이면서 중복으로 내리지 않은 것.
+ */
+export async function countDrafts(): Promise<{ total: number; chat: number; cafe: number }> {
+  const { data, error } = await db()
+    .from('complaints')
+    .select('origin')
+    .eq('ai_draft', true)
+    .is('duplicate_of', null)
+    .limit(5000);
+  if (error) throw new Error(`초안 집계 실패: ${error.message}`);
+  const rows = (data ?? []) as { origin: string }[];
+  const chat = rows.filter((r) => r.origin === 'chat').length;
+  // 카톡이 아닌 초안은 전부 카페 요약에서 온다 (화면의 `cafeDrafts` 와 같은 판정)
+  return { total: rows.length, chat, cafe: rows.length - chat };
 }
 
 /**

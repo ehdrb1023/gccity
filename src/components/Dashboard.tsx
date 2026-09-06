@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BOT_HEALTH_LABEL, botHealth, clockTime, dayLabel, relTime } from '@/lib/time';
+import { isListed } from '@/lib/complaint-view';
 
 type Room = {
   id: string;
@@ -1153,6 +1154,11 @@ type Board = 'list' | 'drafts' | 'cafe';
 function Complaints() {
   const [items, setItems] = useState<Complaint[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  /*
+   * ★ 초안 수는 목록 거르개와 따로 온다. 왼쪽 보드가 "아직 안 본 것" 을 답해야 하는데,
+   *   거르개가 걸린 `items` 에서 세면 민원 목록에서 출처를 고를 때마다 숫자가 흔들린다.
+   */
+  const [draftCounts, setDraftCounts] = useState({ total: 0, chat: 0, cafe: 0 });
   const [sources, setSources] = useState<CrawlSource[]>([]);
   const [authors, setAuthors] = useState<CivicAuthor[]>([]);
   const [cafePosts, setCafePosts] = useState<CafePost[]>([]);
@@ -1179,9 +1185,13 @@ function Complaints() {
   const [paste, setPaste] = useState('');
   const [pasteBoard, setPasteBoard] = useState('');
 
-  const reload = useCallback(async (st: string, query: string, kd: string = 'all') => {
+  /*
+   * ★ 거르개 넷을 **전부 서버로 보낸다.** 하나라도 화면에서만 거르면 칩 숫자가
+   *   목록 줄 수와 갈린다 — `origin` 을 클라에서만 걸러 그 증상이 재발한 적이 있다.
+   */
+  const reload = useCallback(async (st: string, query: string, kd = 'all', og = 'all') => {
     try {
-      const qs = new URLSearchParams({ status: st, q: query, kind: kd });
+      const qs = new URLSearchParams({ status: st, q: query, kind: kd, origin: og });
       const res = await fetch(`/api/complaints?${qs}`, { cache: 'no-store' });
       const json = await res.json();
       if (!json.ok) {
@@ -1191,6 +1201,7 @@ function Complaints() {
       setErr(null);
       setItems(json.complaints);
       setCounts(json.counts);
+      setDraftCounts(json.draftCounts ?? { total: 0, chat: 0, cafe: 0 });
       setSources(json.sources);
       setAuthors(json.authors ?? []);
       setCafePosts(json.cafePosts ?? []);
@@ -1211,9 +1222,9 @@ function Complaints() {
    *   화면이 느려 보이는 것도 대부분 이 자리다.
    */
   useEffect(() => {
-    const t = setTimeout(() => void reload(status, q, kind), q ? 260 : 0);
+    const t = setTimeout(() => void reload(status, q, kind, origin), q ? 260 : 0);
     return () => clearTimeout(t);
-  }, [reload, status, q, kind]);
+  }, [reload, status, q, kind, origin]);
 
   const act = useCallback(
     async (body: Record<string, unknown>): Promise<Record<string, any> | null> => {
@@ -1244,9 +1255,9 @@ function Complaints() {
   const after = useCallback(
     async (json: Record<string, any> | null, note?: string) => {
       if (json && note) setMsg(note);
-      await reload(status, q, kind);
+      await reload(status, q, kind, origin);
     },
-    [reload, status, q, kind],
+    [reload, status, q, kind, origin],
   );
 
   /** ★ 결과를 그대로 적는다 — 몇 곳을 긁어 몇 건이 새것인지, 실패면 사유까지. */
@@ -1267,7 +1278,7 @@ function Complaints() {
           .join(' · '),
       );
     }
-    await reload(status, q, kind);
+    await reload(status, q, kind, origin);
   };
 
   const submitPaste = async () => {
@@ -1275,7 +1286,7 @@ function Complaints() {
     if (!json) return;
     setPaste('');
     setMsg(`${json.parsed}줄에서 ${json.added}건 담았다 (이미 있던 것 ${json.skipped}건)`);
-    await reload(status, q, kind);
+    await reload(status, q, kind, origin);
   };
 
   /* 보드를 옮길 때 걸러둔 것을 풀어준다 — "민원이 하나도 없다" 로 보이는 착시를 막는다 */
@@ -1300,8 +1311,12 @@ function Complaints() {
   const resolutionFor = new Map<string, Complaint>();
   for (const c of items) if (c.resolutionOf) resolutionFor.set(c.resolutionOf, c);
 
-  const byOrigin = (c: Complaint) => origin === 'all' || c.origin === origin;
-  const confirmed = items.filter((c) => !c.aiDraft && !c.duplicateOf && !c.resolutionOf && byOrigin(c));
+  /*
+   * ★ 조건을 여기에 적지 않는다. `isListed` 가 서버의 칩 집계(`applyListed`)와 짝을 이루는
+   *   하나뿐인 정의다 — 여기에 조건을 하나 더 얹으면 그 순간 칩 숫자가 줄 수와 갈린다.
+   *   출처(`origin`)는 서버가 이미 걸러 보내므로 `items` 에 다른 출처가 섞여 오지 않는다.
+   */
+  const confirmed = items.filter(isListed);
   /*
    * ★ 초안은 합치지 않는다. 회신 초안이 민원 줄 안으로 접혀 들어가면 [확정] 버튼이
    *   초안 보드에서 사라져, 사람이 검토할 길이 없어진다. 검토 대기열은 끝까지 평평하게 둔다.
@@ -1350,7 +1365,7 @@ function Complaints() {
                   : `${d.messages}건 읽어 ${d.drafted}건 뽑았고 ${d.added}건 새로 담았다`,
               );
               if (!d.error && d.added > 0) goto('drafts');
-              await reload(status, q, kind);
+              await reload(status, q, kind, origin);
             }}
           >
             지금 분석
@@ -1372,7 +1387,7 @@ function Complaints() {
                     : `${r.scanned}건을 봤지만 새로 제안할 짝이 없다`,
               );
               if ((r.added ?? 0) > 0) goto('list');
-              await reload(status, q, kind);
+              await reload(status, q, kind, origin);
             }}
           >
             짝 찾기
@@ -1470,11 +1485,11 @@ function Complaints() {
       )}
 
       {panel === 'authors' && (
-        <Authors authors={authors} busy={busy} act={act} reload={() => reload(status, q, kind)} onMsg={setMsg} />
+        <Authors authors={authors} busy={busy} act={act} reload={() => reload(status, q, kind, origin)} onMsg={setMsg} />
       )}
 
       {panel === 'sources' && (
-        <Sources sources={sources} busy={busy} act={act} reload={() => reload(status, q, kind)} onCrawl={crawl} />
+        <Sources sources={sources} busy={busy} act={act} reload={() => reload(status, q, kind, origin)} onCrawl={crawl} />
       )}
 
       {/*
@@ -1552,7 +1567,7 @@ function Complaints() {
           <button data-on={board === 'drafts'} onClick={() => goto('drafts')}>
             <b>AI 초안</b>
             <span>
-              {drafts.length}건 · 카톡 {chatDrafts.length} / 카페 {cafeDrafts.length}
+              {draftCounts.total}건 · 카톡 {draftCounts.chat} / 카페 {draftCounts.cafe}
             </span>
           </button>
           <button data-on={board === 'cafe'} onClick={() => goto('cafe')}>
@@ -1706,7 +1721,7 @@ function Complaints() {
               posts={cafePosts}
               busy={busy}
               act={act}
-              reload={() => reload(status, q, kind)}
+              reload={() => reload(status, q, kind, origin)}
               onMsg={setMsg}
               onDone={() => goto('drafts')}
             />

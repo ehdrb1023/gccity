@@ -5,6 +5,7 @@ import {
   attachBody,
   clipMessage,
   countByStatus,
+  countDrafts,
   deleteAuthor,
   deleteComplaint,
   editComplaint,
@@ -44,13 +45,24 @@ export async function GET(req: Request) {
      *   화면은 조작할 때마다 이 응답 하나를 기다리므로 그 지연이 그대로 체감된다.
      *   새 조회를 넣을 때도 이 배열에 얹을 것 — 밖에서 따로 await 하지 말 것.
      */
-    const [complaints, counts, flow, digestRun, authors, cafePosts, sources, pairs] = await Promise.all([
-      listComplaints({
-        status: url.searchParams.get('status') ?? 'all',
-        kind: url.searchParams.get('kind') ?? 'all',
-        q: url.searchParams.get('q') ?? '',
-      }),
-      countByStatus(),
+    /*
+     * ★ 거르개를 한 번 읽어 목록과 칩에 **같은 값**을 준다. 따로 읽으면 한쪽에만
+     *   새 거르개가 붙어 칩 숫자와 줄 수가 갈린다(실측 2026-08-24).
+     */
+    const filter = {
+      status: url.searchParams.get('status') ?? 'all',
+      kind: url.searchParams.get('kind') ?? 'all',
+      q: url.searchParams.get('q') ?? '',
+      origin: url.searchParams.get('origin') ?? 'all',
+    };
+    const [complaints, counts, draftCounts, flow, digestRun, authors, cafePosts, sources, pairs] = await Promise.all([
+      listComplaints(filter),
+      countByStatus(filter),
+      /*
+       * ★ 초안 수는 거르개를 **안 받는다.** 왼쪽 보드의 `AI 초안 12건` 은 "아직 안 본 것"
+       *   이라, 민원 목록에서 출처를 골랐다고 줄어들면 눌러 들어갔을 때 숫자가 달라진다.
+       */
+      countDrafts(),
       // 흐름 요약 — 접수/처리 건수와 평균 처리일. 모수를 함께 내보낸다
       getFlowStats(),
       lastRun(),
@@ -66,6 +78,7 @@ export async function GET(req: Request) {
       ok: true,
       complaints,
       counts,
+      draftCounts,
       flow,
       // 마지막 카톡 분석 결과. 실패도 그대로 화면에 뜬다
       digest: digestRun,
