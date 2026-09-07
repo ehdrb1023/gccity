@@ -18,6 +18,7 @@ import {
   setAuthorKind,
   setKind,
   setResolution,
+  setStage,
   setStatus,
   unlinkResolution,
   type ComplaintStatus,
@@ -147,6 +148,16 @@ export async function POST(req: Request) {
 
       case 'status': {
         await setStatus(String(body.id ?? ''), String(body.status ?? '') as ComplaintStatus);
+        return NextResponse.json({ ok: true });
+      }
+
+      /* 1·3·7 단계 시각. 빈 문자열을 주면 그 단계를 지운다 */
+      case 'stage': {
+        await setStage(
+          String(body.id ?? ''),
+          String(body.stage ?? '') as 'assign' | 'visit',
+          String(body.at ?? ''),
+        );
         return NextResponse.json({ ok: true });
       }
 

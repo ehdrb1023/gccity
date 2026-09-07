@@ -54,6 +54,9 @@ export type Complaint = {
   kindLocked: boolean;
   reportedAt: string | null;
   resolvedAt: string | null;
+  /* 1·3·7 단계 시각. 사람이 [단계 기록] 으로 넣는다 — 모델이 채우지 않는다 */
+  assignedAt: string | null;
+  visitedAt: string | null;
   resolutionOf: string | null;
   summary: string | null;
   /** 배분 부서 — 시청 안에서 맡은 곳 */
@@ -296,7 +299,7 @@ export function parsePastedList(text: string, now = Date.now()): ComplaintDraft[
 const SELECT =
   'id, origin, title, url, author, board, posted_at, body, category, status, note, room_id, message_id, created_at, ' +
   'kind, kind_locked, reported_at, resolved_at, resolution_of, summary, department, agency, due_at, ai_draft, ai_note, cafe_post_id, duplicate_of, ' +
-  'resolution_text, resolution_summary';
+  'resolution_text, resolution_summary, assigned_at, visited_at';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function toComplaint(r: any): Complaint {
@@ -319,6 +322,8 @@ function toComplaint(r: any): Complaint {
     kindLocked: Boolean(r.kind_locked),
     reportedAt: r.reported_at ?? null,
     resolvedAt: r.resolved_at ?? null,
+    assignedAt: r.assigned_at ?? null,
+    visitedAt: r.visited_at ?? null,
     resolutionOf: r.resolution_of ?? null,
     summary: r.summary ?? null,
     department: r.department ?? null,
@@ -566,6 +571,36 @@ export async function clipMessage(messageId: number): Promise<void> {
       { onConflict: 'dedup_key', ignoreDuplicates: true },
     );
   if (insErr) throw new Error(`민원 담기 실패: ${insErr.message}`);
+}
+
+/**
+ * 1·3·7 단계 시각을 손으로 적는다.
+ *
+ * ★ 모델이 채우지 않는다. 배정·출동은 시청이 무엇을 했는지에 대한 사실 주장이고,
+ *   추측으로 채우면 준수율이 조용히 거짓이 된다. 사람이 확인한 것만 들어간다.
+ *
+ * 빈 문자열을 주면 그 단계를 지운다 — 잘못 적은 것을 되돌릴 길이 없으면 안 된다.
+ */
+export async function setStage(
+  id: string,
+  stage: 'assign' | 'visit',
+  at: string,
+): Promise<void> {
+  const col = stage === 'assign' ? 'assigned_at' : stage === 'visit' ? 'visited_at' : null;
+  if (!col) throw new Error(`모르는 단계다: ${stage}`);
+
+  let value: string | null = null;
+  if (at.trim()) {
+    const t = Date.parse(at);
+    if (Number.isNaN(t)) throw new Error(`시각을 읽지 못했다: ${at}`);
+    value = new Date(t).toISOString();
+  }
+
+  const { error } = await db()
+    .from('complaints')
+    .update({ [col]: value, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw new Error(`단계 기록 실패: ${error.message}`);
 }
 
 export async function setStatus(id: string, status: ComplaintStatus): Promise<void> {
@@ -875,6 +910,8 @@ export async function getFlowStats(): Promise<FlowStats> {
       kind: (r.kind ?? 'unknown') as PostKind,
       reportedAt: r.reported_at ?? null,
       resolvedAt: r.resolved_at ?? null,
+    assignedAt: r.assigned_at ?? null,
+    visitedAt: r.visited_at ?? null,
     })),
   );
 }
