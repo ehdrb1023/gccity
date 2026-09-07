@@ -1,0 +1,59 @@
+/**
+ * 디자인 토큰 — 이 파일이 색·간격·타이포의 유일한 출처다.
+ *
+ * ★ 컴포넌트에 hex 리터럴·임의 px 를 적지 않는다. 새 값이 필요하면 여기에 토큰을 더한다.
+ *   (`~/.claude/rules/design.md` 1절. 예전 globals.css 는 이 규칙 없이 색이 흩어져 있었다.)
+ *
+ * ★ 의미색은 3톤으로 나눈다 — 면(`--x`) / 연한 배경(`--x-sf`) / 텍스트(`--x-tx`).
+ *   면 색을 글자에 쓰면 대비가 무너진다. 상태 글자에는 반드시 `-tx` 쪽을 쓸 것.
+ */
+:root {
+  /* 바탕 */
+  --bg: #ffffff;
+  --sf: #f8fafc;
+  --sf2: #f1f4f8;
+  --line: #e3e8ef;
+  --line2: #eef1f6;
+
+  /* 글자 — tx3 까지가 글자용이다. tx4 는 비활성·장식 전용 */
+  --tx: #141c2b;
+  --tx2: #4a5568;
+  --tx3: #6b7686;
+  --tx4: #aeb7c6;
+
+  /* 주색 */
+  --pri: #1b5fd6;
+  --pri-sf: #eaf1fd;
+  --pri-dk: #13458f;
+  --pri-line: #c3d8f8;
+
+  /* 의미색 3톤 */
+  --org: #f26a1b;
+  --org-sf: #fff2e8;
+  --org-tx: #a8480d;
+
+  --red: #e5372f;
+  --red-sf: #fdeeed;
+  --red-tx: #b81f18;
+
+  --grn: #0b9a5c;
+  --grn-sf: #e7f6ef;
+  --grn-tx: #077048;
+
+  /* 치수 */
+  --h-top: 54px;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
+  --pane-w: 264px;
+
+  /* 타이포 — rem 환산하지 않는다(한글 폰트 렌더 일관성) */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs: 14px;
+  --fs-md: 15px;
+  --fs-lg: 20px;
+  --fs-xl: 27px;
+
+  color-scheme: light only;
+}
