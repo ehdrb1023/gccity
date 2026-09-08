@@ -1171,6 +1171,10 @@ function Complaints() {
   const [origin, setOrigin] = useState<'all' | Complaint['origin']>('all');
   /** 잇기 중인 처리 글. 골라두면 민원 줄에 [여기에 잇기] 가 뜬다 */
   const [linking, setLinking] = useState<Complaint | null>(null);
+  /* 짝 지을 때는 아직 해결 안 된 민원만 보면 된다. 기본값을 그쪽에 둔다 */
+  const [unsolvedOnly, setUnsolvedOnly] = useState(false);
+  /* 공지는 민원이 아니라 배경이다. 기본은 접어둔다 */
+  const [showNotice, setShowNotice] = useState(false);
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -1302,6 +1306,19 @@ function Complaints() {
 
   const byOrigin = (c: Complaint) => origin === 'all' || c.origin === origin;
   const confirmed = items.filter((c) => !c.aiDraft && !c.duplicateOf && !c.resolutionOf && byOrigin(c));
+
+  /*
+   * ★ 민원과 처리를 **두 칸으로 가른다.** 한 목록에 섞여 있으면 짝을 지으려고 사람이
+   *   위아래를 오가며 눈으로 찾아야 한다. 나란히 놓으면 왼쪽에서 고르고 오른쪽에서 누른다.
+   *
+   * ★ 이어진 처리 글은 여기 안 온다(`resolutionOf` 로 이미 걸렀다). 오른쪽 칸에 남아 있는
+   *   것은 곧 **아직 짝을 못 찾은 처리**라, 칸이 비면 그게 곧 일이 끝났다는 뜻이다.
+   */
+  const reportRows = confirmed.filter((c) => c.kind !== 'resolution' && (showNotice || c.kind !== 'notice'));
+  const resolutionRows = confirmed.filter((c) => c.kind === 'resolution');
+  const openReports = reportRows.filter((c) => !c.resolutionText && c.status !== 'done');
+  const listReports = unsolvedOnly ? openReports : reportRows;
+  const noticeCount = confirmed.filter((c) => c.kind === 'notice').length;
   /*
    * ★ 초안은 합치지 않는다. 회신 초안이 민원 줄 안으로 접혀 들어가면 [확정] 버튼이
    *   초안 보드에서 사라져, 사람이 검토할 길이 없어진다. 검토 대기열은 끝까지 평평하게 둔다.
@@ -1535,7 +1552,9 @@ function Complaints() {
 
       {linking && (
         <div className="note">
-          <b>잇는 중:</b> {linking.title.slice(0, 40)} — 민원 줄의 <b>[여기에 잇기]</b> 를 누르면 짝이 된다.{' '}
+          <b>잇는 중:</b> {linking.title.slice(0, 46)}
+          {linking.department && <> · <b>{linking.department}</b></>} — <b>왼쪽 민원 칸</b>에서 짝이 될 줄을 열고{' '}
+          <b>[여기에 잇기]</b> 를 누르면 부서와 해결 내용이 그 민원으로 옮겨간다.{' '}
           <button className="btn ghost" onClick={() => setLinking(null)}>
             그만두기
           </button>
@@ -1596,14 +1615,16 @@ function Complaints() {
           {board === 'list' && (
             <>
               <div className="chips">
-                <button data-on={kind === 'all'} onClick={() => setKind('all')}>
-                  전체
+                {/*
+                  ★ 종류(민원/처리) 칩을 없앴다. 이제 **칸 자체가 종류**라 칩으로 또 거르면
+                    "처리만" 을 골랐을 때 왼쪽 칸이 통째로 비어 화면이 고장난 것처럼 보인다.
+                */}
+                <button data-on={unsolvedOnly} onClick={() => setUnsolvedOnly(!unsolvedOnly)}>
+                  아직 해결 안 된 것만
                 </button>
-                {KIND.map((k) => (
-                  <button key={k.key} data-on={kind === k.key} onClick={() => setKind(k.key)}>
-                    {k.label}
-                  </button>
-                ))}
+                <button data-on={showNotice} onClick={() => setShowNotice(!showNotice)}>
+                  공지 보기 {noticeCount > 0 && noticeCount}
+                </button>
                 <span className="dim">|</span>
                 {/* 출처 — 카톡에서 온 것과 카페에서 담은 것은 성격이 다르다 */}
                 <button data-on={origin === 'all'} onClick={() => setOrigin('all')}>
@@ -1635,25 +1656,64 @@ function Complaints() {
               {confirmed.length === 0 ? (
                 <div className="empty">
                   <b>
-                    {q || status !== 'all' || kind !== 'all' || origin !== 'all'
-                      ? '조건에 맞는 민원이 없다'
-                      : '확정된 민원이 아직 없다'}
+                    {q || status !== 'all' || origin !== 'all' ? '조건에 맞는 민원이 없다' : '확정된 민원이 아직 없다'}
                   </b>
                   <b>AI 초안</b> 에서 [확정] 을 누르면 여기로 온다.
                 </div>
               ) : (
-                <ul className="civic-list">
-                  {confirmed.map((c) => (
-                    <CivicLine
-                      key={c.id}
-                      c={c}
-                      fix={resolutionFor.get(c.id)}
-                      open={openId === c.id}
-                      onToggle={() => setOpenId(openId === c.id ? null : c.id)}
-                      {...rowProps}
-                    />
-                  ))}
-                </ul>
+                <div className="civic-split" data-linking={linking ? 'true' : 'false'}>
+                  {/* 왼쪽 — 주민이 낸 민원. 짝을 지을 때 **고르는 쪽**이다 */}
+                  <div className="civic-col" data-side="report">
+                    <h4 className="col-h">
+                      민원 <span className="n">{listReports.length}</span>
+                      {unsolvedOnly && <span className="dim"> · 미해결만</span>}
+                      {!unsolvedOnly && openReports.length !== reportRows.length && (
+                        <span className="dim"> · 미해결 {openReports.length}</span>
+                      )}
+                    </h4>
+                    {listReports.length === 0 ? (
+                      <p className="col-empty">
+                        {unsolvedOnly ? '해결 안 된 민원이 없다.' : '민원이 없다.'}
+                      </p>
+                    ) : (
+                      <ul className="civic-list">
+                        {listReports.map((c) => (
+                          <CivicLine
+                            key={c.id}
+                            c={c}
+                            fix={resolutionFor.get(c.id)}
+                            open={openId === c.id}
+                            onToggle={() => setOpenId(openId === c.id ? null : c.id)}
+                            {...rowProps}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* 오른쪽 — 아직 민원에 못 붙은 처리 글. 여기가 비면 짝짓기가 끝난 것이다 */}
+                  <div className="civic-col" data-side="resolution">
+                    <h4 className="col-h">
+                      처리 <span className="n">{resolutionRows.length}</span>
+                      <span className="dim"> · 아직 민원에 안 붙은 것</span>
+                    </h4>
+                    {resolutionRows.length === 0 ? (
+                      <p className="col-empty">남은 처리 글이 없다 — 전부 민원에 붙었다.</p>
+                    ) : (
+                      <ul className="civic-list">
+                        {resolutionRows.map((c) => (
+                          <CivicLine
+                            key={c.id}
+                            c={c}
+                            open={openId === c.id}
+                            onToggle={() => setOpenId(openId === c.id ? null : c.id)}
+                            {...rowProps}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
               )}
             </>
           )}

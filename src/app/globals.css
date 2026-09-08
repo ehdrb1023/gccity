@@ -460,6 +460,36 @@ input { font: inherit; }
 .civic-stat .warn b { color: var(--warn); }
 
 /*
+ * ── 민원 / 처리 두 칸 ─────────────────────────────────
+ *
+ * 짝을 짓는 화면이라 **고르는 쪽(민원)과 누르는 쪽(처리)이 한눈에 같이** 보여야 한다.
+ * 한 목록에 섞어두면 위아래를 오가며 눈으로 찾게 되고, 그러면 사람이 짝짓기를 안 한다.
+ *
+ * ★ 좁은 화면에서는 세로로 쌓는다. 두 칸을 억지로 유지하면 제목이 두 글자씩 끊긴다.
+ */
+.civic-split { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+.civic-col { min-width: 0; }
+.civic-col[data-side='resolution'] { border-left: 1px solid var(--line); background: color-mix(in srgb, var(--ink) 2%, transparent); }
+.col-h {
+  position: sticky; top: 0; z-index: 1;
+  margin: 0; padding: 9px 16px;
+  font-size: 12px; font-weight: 600; letter-spacing: -.2px;
+  color: var(--ink-2); background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.col-h .n { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 2px;
+  border-radius: 999px; background: color-mix(in srgb, var(--ink) 8%, transparent);
+  font-size: 11px; text-align: center; }
+.col-h .dim { font-weight: 500; font-size: 11px; }
+.col-empty { margin: 0; padding: 18px 16px; font-size: 12.5px; color: var(--ink-3); }
+
+/* 잇는 중에는 고를 쪽을 띄우고 나머지를 죽인다 — 어디를 눌러야 하는지 헷갈리지 않게 */
+.civic-split[data-linking='true'] .civic-col[data-side='resolution'] { opacity: .5; }
+.civic-split[data-linking='true'] .civic-col[data-side='report'] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/*
  * 민원 목록은 카페 게시판을 그대로 옮긴 모양이다 — 부서 · 제목 · 날짜 한 줄.
  * 누르면 그 자리에서 아래로 펼쳐진다. 민원 하나를 열어 들어가는 화면은 만들지 않는다:
  * 목록으로 돌아오면 읽던 자리를 잃는다.
@@ -541,6 +571,12 @@ input { font: inherit; }
 .citem-head { display: flex; align-items: flex-start; gap: 10px; }
 .citem-acts { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 2px; }
 .citem-acts .btn { flex: none; }
+
+/* 두 칸을 유지할 만한 폭이 안 되면 세로로 쌓는다 */
+@media (max-width: 1100px) {
+  .civic-split { grid-template-columns: 1fr; }
+  .civic-col[data-side='resolution'] { border-left: 0; border-top: 1px solid var(--line); }
+}
 
 @media (max-width: 780px) {
   .civic-board { flex-direction: column; }
