@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compliance, isLate, slaView, stageHours, stageState, type SlaInput } from './sla';
+import { STAGES, compliance, isLate, slaView, stageHours, stageState, type SlaInput } from './sla';
 
 /**
  * 이 테스트가 지키는 것은 숫자 계산이 아니라 **늦은 것이 늦다고 나오는가**이다.
@@ -105,9 +105,14 @@ describe('compliance', () => {
 });
 
 describe('slaView', () => {
-  it('세 단계를 1·3·7 차례로 낸다', () => {
+  /**
+   * 단계 정의는 `STAGES` 하나뿐이다. 여기서 배열을 그대로 확인해 두면 단계를 고칠 때
+   * 화면만 고치고 집계를 빠뜨리는 일을 막는다.
+   */
+  it('STAGES 를 정의된 차례 그대로 낸다', () => {
     const v = slaView({ ...none, reportedAt: h(1) }, NOW);
-    expect(v.map((s) => s.no)).toEqual([1, 3, 7]);
-    expect(v.map((s) => s.label)).toEqual(['배정', '출동', '답변']);
+    expect(v.map((s) => s.step)).toEqual(STAGES.map((s) => s.step));
+    expect(v.map((s) => s.key)).toEqual(['assign', 'visit', 'reply']);
+    expect(v.map((s) => s.limitHours)).toEqual(STAGES.map((s) => s.limitHours));
   });
 });

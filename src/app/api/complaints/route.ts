@@ -151,7 +151,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      /* 1·3·7 단계 시각. 빈 문자열을 주면 그 단계를 지운다 */
+      /* 처리 단계 시각. 빈 문자열을 주면 그 단계를 지운다 */
       case 'stage': {
         await setStage(
           String(body.id ?? ''),

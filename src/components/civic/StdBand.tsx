@@ -4,7 +4,7 @@ import { STAGES, compliance, isLate, slaView, type SlaInput } from '@/lib/sla';
 import type { Complaint, Flow } from '@/components/types';
 
 /**
- * 1·3·7 기준 준수 띠 + 그 아래 숫자 넷.
+ * 처리 기준 준수 띠 + 그 아래 숫자 넷.
  *
  * ★ 모수를 반드시 함께 적는다. `80%` 가 5건 중 4건인지 100건 중 80건인지 모르면 그 숫자는
  *   판단 근거가 못 된다. 그래서 비율 옆에 언제나 `4 / 5건` 이 붙는다.
@@ -38,7 +38,7 @@ export default function StdBand({
     <>
       <div className="std">
         <div className="std-h">
-          <h2>1·3·7 기준 준수</h2>
+          <h2>처리 기준 준수</h2>
           <span>민원 {reports.length}건 기준 · 아직 한도 안에서 기다리는 건은 세지 않습니다</span>
         </div>
         <div className="std-g">
@@ -47,7 +47,7 @@ export default function StdBand({
             return (
               <div className="std-c" key={s.key}>
                 <div className="no">
-                  <b>{s.no}</b>
+                  <b>{s.step}</b>
                   <i>{s.desc}</i>
                 </div>
                 <div className="lim">{s.limitHours}시간 안에</div>
@@ -100,7 +100,7 @@ export default function StdBand({
   );
 }
 
-/** 줄에 붙는 1·3·7 칩 세 개. 상태에 따라 색이 갈린다 */
+/** 줄에 붙는 단계 칩. `STAGES` 개수만큼 나오고, 상태에 따라 색이 갈린다 */
 export function SlaChips({ c, now }: { c: Complaint; now: number }) {
   const input: SlaInput = {
     reportedAt: c.reportedAt,
@@ -112,7 +112,7 @@ export function SlaChips({ c, now }: { c: Complaint; now: number }) {
     <span className="sla">
       {slaView(input, now).map((v) => (
         <span key={v.key} className={`sl ${v.state === 'wait' ? '' : v.state}`}>
-          <u>{v.no}</u>
+          <u>{v.step}</u>
           {v.hours == null ? (
             /* 기록이 비었는데 한도가 지났으면 `대기` 가 아니라 `기록 없음` 이다 — 늦은 것을 숨기지 않는다 */
             `${v.label} ${v.state === 'late' ? '기록 없음' : '대기'}`

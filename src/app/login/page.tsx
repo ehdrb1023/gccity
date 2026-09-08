@@ -1,4 +1,4 @@
-import Wing from '@/components/ui/Wing';
+import Mark from '@/components/ui/Mark';
 import { STAGES } from '@/lib/sla';
 
 export const dynamic = 'force-dynamic';
@@ -29,23 +29,23 @@ export default async function LoginPage({
     <main className="login">
       <div className="login-box">
         <div className="login-mark">
-          <Wing size={30} />
-          <span className="nm">과천시 민원 콘솔</span>
+          <Mark size={30} />
+          <span className="nm">민원 콘솔</span>
         </div>
 
         <h1>
           접수부터 답변까지
           <br />
-          1·3·7 기준으로 셉니다
+          기한 안에 처리됐는지 셉니다
         </h1>
-        <p className="sub">흩어진 민원을 한곳에 모으고, 기준 안에 처리됐는지 숫자로 봅니다.</p>
+        <p className="sub">흩어진 민원을 한곳에 모으고, 단계마다 얼마나 걸렸는지 숫자로 봅니다.</p>
 
         <div className="login-std">
           {STAGES.map((s) => (
             <div key={s.key}>
-              <b>{s.no}</b>
+              <b>{s.step}</b>
               <span>
-                {s.limitHours}시간 {s.label}
+                {s.label} {s.limitHours}시간
               </span>
             </div>
           ))}

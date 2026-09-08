@@ -34,9 +34,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
-/* 과천시 상징 */
-.wing { display: block; }
-.wing path { fill: currentColor; }
+/* 앱 마크 */
+.mark-i { display: block; }
 
 /* ── 버튼 ───────────────────────────────────────────────────────────────── */
 
@@ -106,7 +105,7 @@ textarea.inp { height: auto; padding: 12px 14px; line-height: 1.65; resize: vert
   display: flex; align-items: center; gap: 14px; padding: 0 20px; background: var(--bg);
 }
 .mark { display: flex; align-items: center; gap: 8px; white-space: nowrap; flex: none; font-weight: 700; font-size: 14.5px; letter-spacing: -0.03em; color: var(--tx); }
-.mark .wing { color: var(--pri); }
+.mark .mark-i { color: var(--pri); }
 .mark em { font-style: normal; color: var(--tx4); font-weight: 500; }
 .tabs { display: flex; gap: 2px; margin-left: 6px; }
 .tabs button {
@@ -135,7 +134,7 @@ textarea.inp { height: auto; padding: 12px 14px; line-height: 1.65; resize: vert
 .wrap h2.pg { font-size: var(--fs-lg); font-weight: 700; letter-spacing: -0.035em; margin: 0 0 4px; }
 .wrap p.pg { color: var(--tx3); font-size: var(--fs-sm); margin: 0 0 18px; }
 
-/* ── 1·3·7 기준 띠 ──────────────────────────────────────────────────────── */
+/* ── 처리 기준 띠 ──────────────────────────────────────────────────────── */
 
 .std { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; margin: 0 0 12px; }
 .std-h { display: flex; align-items: baseline; gap: 10px; padding: 16px 20px 0; flex-wrap: wrap; }
@@ -203,7 +202,7 @@ textarea.inp { height: auto; padding: 12px 14px; line-height: 1.65; resize: vert
 .rowbox p { margin: 0 0 10px; font-size: var(--fs-sm); color: var(--tx2); }
 .rowbox textarea { margin-bottom: 10px; }
 
-/* ── 1·3·7 진행 표시 ────────────────────────────────────────────────────── */
+/* ── 단계 진행 표시 ────────────────────────────────────────────────────── */
 
 .sla { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
 .sl { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 6px; border-radius: var(--r-sm); background: var(--sf2); font-size: var(--fs-xs); font-weight: 600; color: var(--tx3); }
@@ -339,13 +338,13 @@ textarea.inp { height: auto; padding: 12px 14px; line-height: 1.65; resize: vert
 .knob[data-on='true']::after { transform: translateX(20px); }
 
 .foot-ci { display: flex; align-items: center; gap: 8px; color: var(--tx3); font-size: var(--fs-xs); padding: 22px 0 0; margin-top: 28px; border-top: 1px solid var(--line2); }
-.foot-ci .wing { color: var(--tx4); flex: none; }
+.foot-ci .mark-i { color: var(--tx4); flex: none; }
 
 /* ── 반응형 ─────────────────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
   .top { gap: 8px; padding: 0 12px; }
-  .mark em { display: none; }          /* 이름은 `과천시` 만 남긴다 — 좁은 화면에서 두 줄로 접힌다 */
+  .mark em { display: none; }          /* 앞 낱말만 남긴다 — 좁은 화면에서 두 줄로 접힌다 */
   .pulse { display: none; }            /* 봇 상태는 [방 찾기] 탭에 같은 값이 있다 */
   .tabs { flex: 1; min-width: 0; overflow-x: auto; margin-left: 0; }
   .tabs button { flex: none; }

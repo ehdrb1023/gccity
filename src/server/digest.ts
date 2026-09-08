@@ -54,7 +54,7 @@ export type DigestResult = {
  *   그 창의 민원을 통째로 잃는 것이 훨씬 나쁘다.
  */
 const ItemSchema = z.object({
-  kind: z.string().describe('"report"(민원 제기) 또는 "resolution"(담당자·시청의 회신) 둘 중 하나'),
+  kind: z.string().describe('"report"(민원 제기) 또는 "resolution"(담당자·담당 기관의 회신) 둘 중 하나'),
   title: z.string().describe('민원 제목. 40자 이내의 명사구'),
   summary: z.string().describe('무엇을 요구하거나 알린 것인지 두 문장 이내'),
   category: z.string().describe('교통·환경·공원·재건축·행정 같은 짧은 분류 한 낱말'),
@@ -80,7 +80,7 @@ const OutSchema = z.object({
 });
 
 const SYSTEM = [
-  '너는 경기도 과천시 주민 오픈채팅방의 대화를 읽고 **민원**만 골라내는 일을 한다.',
+  '너는 지역 주민 오픈채팅방의 대화를 읽고 **민원**만 골라내는 일을 한다.',
   '',
   '민원이다:',
   '- 생활 불편 신고(도로 파임, 냄새, 소음, 쓰레기, 시설 고장, 안전 위험)',

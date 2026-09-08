@@ -7,8 +7,8 @@ const PRETENDARD =
   '@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css';
 
 export const metadata = {
-  title: '과천시 민원 콘솔',
-  description: '흩어진 민원을 한곳에 모으고 1·3·7 기준으로 처리 현황을 셉니다',
+  title: '민원 콘솔',
+  description: '흩어진 민원을 한곳에 모으고 처리 기한 준수를 숫자로 봅니다',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

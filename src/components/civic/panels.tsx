@@ -18,7 +18,7 @@ export function PastePanel({ busy, act, onDone }: { busy: boolean; act: Act; onD
         <b>카페 글</b> 보드를 쓰세요.
       </p>
       <label className="lbl" htmlFor="pb">출처 이름</label>
-      <input className="inp" id="pb" value={board} placeholder="예: 과천 카페 자유게시판" onChange={(e) => setBoard(e.target.value)} />
+      <input className="inp" id="pb" value={board} placeholder="예: ○○ 카페 자유게시판" onChange={(e) => setBoard(e.target.value)} />
       <label className="lbl" htmlFor="pt" style={{ marginTop: 14 }}>목록</label>
       <textarea
         className="inp"
@@ -63,7 +63,7 @@ export function ManualPanel({ busy, act, onDone }: { busy: boolean; act: Act; on
       <label className="lbl" htmlFor="mu" style={{ marginTop: 14 }}>링크</label>
       <input className="inp" id="mu" value={url} placeholder="없으면 비워두세요" onChange={(e) => setUrl(e.target.value)} />
       <p className="note" style={{ marginTop: 12 }}>
-        본문·접수일·부서는 담은 뒤 그 줄을 펼쳐서 넣습니다. 접수일이 있어야 1·3·7 시계가 돕니다.
+        본문·접수일·부서는 담은 뒤 그 줄을 펼쳐서 넣습니다. 접수일이 있어야 단계 시계가 돕니다.
       </p>
       <div className="acts">
         <button
@@ -84,12 +84,12 @@ export function ManualPanel({ busy, act, onDone }: { busy: boolean; act: Act; on
   );
 }
 
-/* ── 1·3·7 단계 기록 ─────────────────────────────────────────────────────── */
+/* ── 처리 단계 기록 ─────────────────────────────────────────────────────── */
 
 /**
- * 배정·출동 시각을 손으로 적는다.
+ * 배정·확인 시각을 손으로 적는다.
  *
- * ★ 모델이 채우지 않는다. 시청이 언제 무엇을 했는지는 사실 주장이고, 추측으로 채우면
+ * ★ 모델이 채우지 않는다. 담당 기관이 언제 무엇을 했는지는 사실 주장이고, 추측으로 채우면
  *   준수율이 조용히 거짓이 된다. 답변 시각은 [해결 내용] 에서 이미 들어오므로 여기 없다.
  */
 export function StagePanel({
@@ -115,7 +115,7 @@ export function StagePanel({
       <p className="note">
         접수 시각은 {c.reportedAt ? new Date(c.reportedAt).toLocaleString('ko-KR') : '아직 없습니다'}.
         {c.reportedAt
-          ? ' 아래 두 시각까지의 간격으로 1·3·7 준수를 셉니다.'
+          ? ' 아래 두 시각까지의 간격으로 기한 준수를 셉니다.'
           : ' 접수 시각이 없으면 단계를 재도 준수율에 들어가지 않습니다 — 줄을 펼쳐 [본문] 이나 [해결 내용] 으로 먼저 채우세요.'}
       </p>
 
@@ -179,7 +179,7 @@ export function SourcesPanel({
       </p>
 
       <label className="lbl" htmlFor="sn">이름</label>
-      <input className="inp" id="sn" value={name} placeholder="예: 과천시청 시민의소리" onChange={(e) => setName(e.target.value)} />
+      <input className="inp" id="sn" value={name} placeholder="예: ○○시청 시민의소리" onChange={(e) => setName(e.target.value)} />
       <label className="lbl" htmlFor="su" style={{ marginTop: 14 }}>목록·RSS 주소</label>
       <input className="inp mono" id="su" value={url} placeholder="https://…" onChange={(e) => setUrl(e.target.value)} />
       <label className="lbl" htmlFor="sk" style={{ marginTop: 14 }}>제목 낱말 거르기</label>

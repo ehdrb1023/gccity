@@ -40,7 +40,7 @@ function leadLabel(reportedAt: string | null, resolvedAt: string | null): string
 }
 
 /**
- * 목록의 한 줄. 접혀 있을 때는 상태·제목·메타·1·3·7 칩만 보이고, 누르면 그 자리에서 펼쳐진다.
+ * 목록의 한 줄. 접혀 있을 때는 상태·제목·메타·단계 칩만 보이고, 누르면 그 자리에서 펼쳐진다.
  *
  * ★ 민원 목록과 초안 보드가 **같은 줄 모양**을 쓴다. 초안에서만 다른 것은 배지와
  *   [확정] 버튼 둘뿐이어야 한다 — 그래야 확정이 무엇을 바꾸는지 사람이 예측한다.
@@ -69,7 +69,7 @@ export default function ComplaintRow({
             {dept ? <span>{dept}</span> : agency ? <span>외부 · {agency}</span> : c.kind === 'report' ? <span>배분 전</span> : null}
             {c.author && <span>{c.author}</span>}
           </span>
-          {/* 1·3·7 은 민원에만 뜻이 있다. 처리 글·공지·초안에는 붙이지 않는다 */}
+          {/* 단계 칩은 민원에만 뜻이 있다. 처리 글·공지·초안에는 붙이지 않는다 */}
           {!c.aiDraft && c.kind === 'report' && <SlaChips c={c} now={rest.now} />}
         </span>
         <Chevron />
@@ -215,7 +215,7 @@ function Detail({ c, busy, now, act, after, linking, setLinking, onMsg, onStage 
           </button>
         )}
 
-        {/* 1·3·7 은 사람이 확인한 것만 들어간다. 모델이 채우지 않는다 */}
+        {/* 단계 시각은 사람이 확인한 것만 들어간다. 모델이 채우지 않는다 */}
         {!c.aiDraft && c.kind === 'report' && (
           <button className="btn sm line" disabled={busy} onClick={() => onStage(c)}>
             단계 기록
@@ -302,9 +302,9 @@ function Detail({ c, busy, now, act, after, linking, setLinking, onMsg, onStage 
             className="btn sm line"
             disabled={busy}
             onClick={async () => {
-              const department = window.prompt('배분 부서 — 시청 안에서 맡은 곳 (비우면 지웁니다)', c.department ?? '');
+              const department = window.prompt('배분 부서 — 담당 기관 안에서 맡은 곳 (비우면 지웁니다)', c.department ?? '');
               if (department === null) return;
-              const agency = window.prompt('회신 기관 — 시청 밖에서 답한 곳. 없으면 비워두세요', c.agency ?? '');
+              const agency = window.prompt('회신 기관 — 담당 기관 밖에서 답한 곳. 없으면 비워두세요', c.agency ?? '');
               if (agency === null) return;
               await after(await act({ action: 'edit', id: c.id, department, agency }), '부서를 고쳤습니다');
             }}

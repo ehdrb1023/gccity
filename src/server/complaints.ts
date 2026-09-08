@@ -10,9 +10,9 @@ import {
 } from './complaint-classify';
 
 /**
- * 민원실 — 과천 민원 게시글을 모아 상태를 따라가는 곳.
+ * 민원실 — 민원 게시글을 모아 상태를 따라가는 곳.
  *
- * 자료실(`files.ts`)과 나란히 서지만 **방에 매이지 않는다.** 과천시 민원은 특정 카톡방의
+ * 자료실(`files.ts`)과 나란히 서지만 **방에 매이지 않는다.** 민원은 특정 카톡방의
  * 소유물이 아니라 도시의 일이라, 팔로우 방을 바꿔도 같은 목록이 보여야 한다.
  *
  * 들어오는 길이 셋이다.
@@ -54,14 +54,14 @@ export type Complaint = {
   kindLocked: boolean;
   reportedAt: string | null;
   resolvedAt: string | null;
-  /* 1·3·7 단계 시각. 사람이 [단계 기록] 으로 넣는다 — 모델이 채우지 않는다 */
+  /* 처리 단계 시각. 사람이 [단계 기록] 으로 넣는다 — 모델이 채우지 않는다 */
   assignedAt: string | null;
   visitedAt: string | null;
   resolutionOf: string | null;
   summary: string | null;
-  /** 배분 부서 — 시청 안에서 맡은 곳 */
+  /** 배분 부서 — 담당 기관 안에서 맡은 곳 */
   department: string | null;
-  /** 회신 기관 — 시청 밖에서 답을 준 곳. 부서와 섞지 않는다 */
+  /** 회신 기관 — 담당 기관 밖에서 답을 준 곳. 부서와 섞지 않는다 */
   agency: string | null;
   dueAt: string | null;
   /** 모델이 넣은 초안. 사람이 확정하기 전까지 배지가 붙는다 */
@@ -88,7 +88,7 @@ export type ComplaintDraft = {
   board?: string | null;
   postedAt?: string | null;
   body?: string | null;
-  /** 게시판 카테고리(교통.공원 · 경로당 · 과천축제…). 목록 왼쪽 열에서 온다 */
+  /** 게시판 카테고리(교통.공원 · 경로당 · 축제…). 목록 왼쪽 열에서 온다 */
   category?: string | null;
 };
 
@@ -273,7 +273,7 @@ export function parsePastedList(text: string, now = Date.now()): ComplaintDraft[
         if (c.length <= 20 && !/^\d{1,7}$/.test(c)) { author = c; break; }
       }
     }
-    // 맨 앞의 짧은 칸은 게시판 카테고리다(교통.공원 · 경로당 · 과천축제…). 분류에 쓸모가 있다
+    // 맨 앞의 짧은 칸은 게시판 카테고리다(교통.공원 · 경로당 · 축제…). 분류에 쓸모가 있다
     if (titleIdx > 0) {
       const head = plain[0];
       if (head !== author && head.length <= 24 && !/^\d{1,7}$/.test(head)) {
@@ -574,9 +574,9 @@ export async function clipMessage(messageId: number): Promise<void> {
 }
 
 /**
- * 1·3·7 단계 시각을 손으로 적는다.
+ * 처리 단계 시각을 손으로 적는다.
  *
- * ★ 모델이 채우지 않는다. 배정·출동은 시청이 무엇을 했는지에 대한 사실 주장이고,
+ * ★ 모델이 채우지 않는다. 배정·확인은 담당 기관이 무엇을 했는지에 대한 사실 주장이고,
  *   추측으로 채우면 준수율이 조용히 거짓이 된다. 사람이 확인한 것만 들어간다.
  *
  * 빈 문자열을 주면 그 단계를 지운다 — 잘못 적은 것을 되돌릴 길이 없으면 안 된다.

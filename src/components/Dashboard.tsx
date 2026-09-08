@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { BOT_HEALTH_LABEL, botHealth, relTime } from '@/lib/time';
-import Wing from './ui/Wing';
+import Mark from './ui/Mark';
 import ChatTab from './tabs/ChatTab';
 import VaultTab from './tabs/VaultTab';
 import FindTab from './tabs/FindTab';
@@ -147,8 +147,8 @@ export default function Dashboard() {
     <main className="app">
       <header className="top">
         <div className="mark">
-          <Wing />
-          과천시 <em>민원 콘솔</em>
+          <Mark />
+          민원 <em>콘솔</em>
         </div>
         <nav className="tabs">
           {TABS.map((t) => (

@@ -1,8 +1,9 @@
 /**
- * 1·3·7 기준 — 접수부터 답변까지 걸린 시간을 단계별로 잰다.
+ * 처리 기준 — 접수부터 답변까지 걸린 시간을 단계별로 잰다.
  *
- * 이름의 1·3·7 은 날짜가 아니라 **부르는 이름**이고, 실제 한도는 시간이다.
- * (1일 배정 = 12시간, 3일 출동 = 36시간, 7일 답변 = 72시간)
+ * ★ 단계와 한도는 아래 `STAGES` 하나뿐이다. 기관마다 기준이 다르니 **여기만 고치면**
+ *   화면·집계·테스트가 함께 따라온다. 단계를 늘리거나 줄여도 된다 — 화면은 배열을 그대로 그린다.
+ *   단, 단계를 더하려면 그 시각을 담을 컬럼과 입력 자리(`StagePanel`)가 함께 필요하다.
  *
  * ★ 기록이 없는 단계를 무조건 `wait` 로 두지 않는다.
  *   한도가 이미 지났는데 기록이 비어 있으면 그것은 "기다리는 중" 이 아니라 **늦은 것**이다.
@@ -16,8 +17,8 @@
 export type StageKey = 'assign' | 'visit' | 'reply';
 
 export type Stage = {
-  /** 화면에 크게 박히는 숫자. 1·3·7 */
-  no: 1 | 3 | 7;
+  /** 몇 번째 걸음인지. 화면에 크게 박힌다 */
+  step: number;
   key: StageKey;
   /** 짧은 이름 — 줄에 붙는다 */
   label: string;
@@ -28,9 +29,9 @@ export type Stage = {
 };
 
 export const STAGES: Stage[] = [
-  { no: 1, key: 'assign', label: '배정', desc: '담당 부서 배정', limitHours: 12 },
-  { no: 3, key: 'visit', label: '출동', desc: '현장 확인', limitHours: 36 },
-  { no: 7, key: 'reply', label: '답변', desc: '민원 답변', limitHours: 72 },
+  { step: 1, key: 'assign', label: '배정', desc: '담당자 배정', limitHours: 12 },
+  { step: 2, key: 'visit', label: '확인', desc: '현장 확인', limitHours: 36 },
+  { step: 3, key: 'reply', label: '답변', desc: '처리 결과 회신', limitHours: 72 },
 ];
 
 /** 아직 안 왔음 / 한도 안 / 한도 임박 / 한도 넘김 */

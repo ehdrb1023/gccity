@@ -81,7 +81,7 @@ export type Complaint = {
   kindLocked: boolean;
   reportedAt: string | null;
   resolvedAt: string | null;
-  /* 1·3·7 단계 시각. 사람이 [단계 기록] 으로 넣는다 — 모델이 채우지 않는다 */
+  /* 처리 단계 시각. 사람이 [단계 기록] 으로 넣는다 — 모델이 채우지 않는다 */
   assignedAt: string | null;
   visitedAt: string | null;
   resolutionOf: string | null;

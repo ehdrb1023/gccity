@@ -45,7 +45,7 @@ export type CafePost = {
 };
 
 const ItemSchema = z.object({
-  kind: z.string().describe('"report"(주민이 제기한 민원) 또는 "resolution"(시청·담당자의 회신·처리 결과)'),
+  kind: z.string().describe('"report"(주민이 제기한 민원) 또는 "resolution"(담당 기관·담당자의 회신·처리 결과)'),
   part: z.string().describe('이 항목이 나온 칸. "본문" 또는 "회신"'),
   title: z.string().describe('민원 제목. 40자 이내의 명사구'),
   summary: z.string().describe('무엇을 요구하거나 알린 것인지 세 문장 이내. 장황한 원문을 사람이 훑을 수 있게 줄인다'),
@@ -59,7 +59,7 @@ const OutSchema = z.object({
 });
 
 const SYSTEM = [
-  '너는 경기도 과천시 주민 커뮤니티(네이버 카페)에 올라온 글 하나를 읽고 **민원**을 뽑아내는 일을 한다.',
+  '너는 지역 주민 커뮤니티(네이버 카페)에 올라온 글 하나를 읽고 **민원**을 뽑아내는 일을 한다.',
   '',
   '민원이다:',
   '- 생활 불편 신고(도로 파임, 냄새, 소음, 쓰레기, 시설 고장, 안전 위험)',
@@ -270,7 +270,7 @@ export async function summarizeCafePost(id: string): Promise<SummarizeResult> {
         category: it.category.trim().slice(0, 60) || null,
         body: (fromReply ? reply : body).slice(0, 8000),
         url: (post as any).url || null,
-        board: '과천 카페',
+        board: '카페',
         // 부서는 회신문에만 있다. 민원 글에 붙이면 "이미 배분됐다" 로 잘못 읽힌다
         department: fromReply || kind === 'resolution' ? parsed.department : null,
         agency: fromReply || kind === 'resolution' ? parsed.agency : null,

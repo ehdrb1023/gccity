@@ -7,7 +7,7 @@ import { isLate, type SlaInput } from '@/lib/sla';
 import Empty, { Skeleton } from '@/components/ui/Empty';
 import Drawer from '@/components/ui/Drawer';
 import { Arrow, Search, Spark } from '@/components/ui/icons';
-import Wing from '@/components/ui/Wing';
+import Mark from '@/components/ui/Mark';
 import StdBand from './StdBand';
 import ComplaintRow from './ComplaintRow';
 import CafeBox from './CafeBox';
@@ -35,7 +35,7 @@ const PANEL_TITLE: Record<Exclude<Panel, 'none'>, string> = {
   manual: '민원 직접 적기',
   sources: '크롤 소스',
   authors: '작성자 등록부',
-  stage: '1·3·7 단계 기록',
+  stage: '처리 단계 기록',
 };
 
 const slaOf = (c: Complaint): SlaInput => ({
@@ -195,7 +195,7 @@ export default function CivicTab({ now }: { now: number }) {
    */
   const listed = rows.filter(isListed);
   /*
-   * ★ `lateOnly` 만 화면에서 자른다. 1·3·7 판정은 **지금 시각**에 달려 있어 서버 집계로
+   * ★ `lateOnly` 만 화면에서 자른다. 기한 판정은 **지금 시각**에 달려 있어 서버 집계로
    *   옮길 수 없다(같은 행이 한 시간 뒤에 늦은 것이 된다). 그래서 이 거르개가 켜지면
    *   기준 띠를 `listed` 로 계산하고 목록만 좁힌 뒤, 둘이 다른 것을 세고 있다고 화면에 적는다.
    *   숫자와 줄 수가 다른 것을 말없이 두지 않는다.
@@ -430,8 +430,8 @@ export default function CivicTab({ now }: { now: number }) {
               )}
 
               <div className="foot-ci">
-                <Wing size={16} />
-                민원의 특성에 따라 절차가 변동될 수 있습니다. 시청 공식 접수와 별개로 시민이 직접 세는 기록입니다.
+                <Mark size={16} />
+                민원의 특성에 따라 절차가 달라질 수 있습니다. 기관의 공식 접수와 별개로 직접 세는 기록입니다.
               </div>
             </>
           )}
