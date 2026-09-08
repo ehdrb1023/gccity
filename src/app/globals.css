@@ -94,6 +94,11 @@ input { font: inherit; }
  * 방을 고르는 일은 한 번뿐이므로 탭 뒤에 둔다.
  */
 .stage { max-width: 900px; margin: 0 auto; }
+/*
+ * 민원실은 상단바와 **같은 폭**을 쓴다. 바깥(.shell)만 넓히고 .stage 를 900px 로 두면
+ * 상단바만 늘어나고 목록은 그대로라 제목이 계속 잘린다(실측 2026-09-08).
+ */
+.shell.wide .stage { max-width: none; }
 
 /* 탭에 숫자 배지를 달지 않는다. 방 하나만 고르면 끝나는 일이라 상시 알림이 필요 없다. */
 .tabs { display: flex; gap: 2px; margin-left: 8px; }
