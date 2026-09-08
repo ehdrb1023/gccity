@@ -26,6 +26,20 @@ export function dayLabel(iso: string): string {
   return d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
 }
 
+/**
+ * 목록용 짧은 날짜 — `9/1(화)`.
+ *
+ * 민원 목록은 한 줄에 부서·제목·날짜가 함께 들어간다. 긴 형식(`9월 1일 (화)`)을 쓰면
+ * 두 칸으로 갈랐을 때 날짜가 제목 자리를 먹어 **제목이 통째로 잘린다**(실측 2026-09-08).
+ * 대화 화면의 날짜 구분선은 긴 형식이 맞으므로 `dayLabel` 은 그대로 둔다.
+ */
+export function dayShort(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const w = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+  return `${d.getMonth() + 1}/${d.getDate()}(${w})`;
+}
+
 export type BotHealth = 'ok' | 'lagging' | 'down' | 'unknown';
 
 /**

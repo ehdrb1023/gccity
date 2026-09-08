@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BOT_HEALTH_LABEL, botHealth, clockTime, dayLabel, relTime } from '@/lib/time';
+import { BOT_HEALTH_LABEL, botHealth, clockTime, dayLabel, dayShort, relTime } from '@/lib/time';
 
 type Room = {
   id: string;
@@ -199,7 +199,8 @@ export default function Dashboard() {
     followed.every((r) => !r.lastSeenAt || now - Date.parse(r.lastSeenAt) > 6 * 3600_000);
 
   return (
-    <main className="shell">
+    /* 민원실은 민원·처리 두 칸이라 좁은 폭에서 제목이 통째로 잘린다. 이 탭만 넓게 쓴다 */
+    <main className={`shell${tab === 'civic' ? ' wide' : ''}`}>
       <div className="topbar">
         <div className="brand">
           gccity<span>카톡 오픈채팅 수집</span>
@@ -1831,7 +1832,7 @@ function CivicLine({
         </span>
         {/* 해결된 민원은 걸린 날수를 줄에 적는다 — 목록을 훑는 것만으로 흐름이 읽힌다 */}
         {solved && <span className="cfix">해결{days === null ? '' : days === 0 ? ' · 당일' : ` · ${days}일`}</span>}
-        <span className="cline-date">{dayLabel(c.reportedAt ?? c.postedAt ?? c.createdAt)}</span>
+        <span className="cline-date">{dayShort(c.reportedAt ?? c.postedAt ?? c.createdAt)}</span>
       </button>
 
       {open && (

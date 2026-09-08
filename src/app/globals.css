@@ -46,6 +46,11 @@ input { font: inherit; }
 /* ── 셸 ─────────────────────────────────────────────── */
 
 .shell { max-width: 1180px; margin: 0 auto; padding: 20px 16px 64px; }
+/*
+ * 민원실만 넓게 쓴다. 민원·처리 두 칸으로 갈라 놓으면 1180px 에서 한 칸이 ~430px 이 되고,
+ * 부서(148px)+배지+날짜를 빼면 제목 자리가 남지 않아 **제목이 통째로 잘린다**(실측 2026-09-08).
+ */
+.shell.wide { max-width: min(1760px, 96vw); }
 
 .topbar {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -511,6 +516,12 @@ input { font: inherit; }
   flex: 0 0 148px; font-size: 11.5px; font-weight: 700; color: var(--ok);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* 두 칸 안에서는 폭이 절반이라 부서 칸을 줄인다. 제목이 먼저 살아야 한다 */
+.civic-split .cdept { flex: 0 0 116px; }
+.civic-split .civic-line { gap: 8px; padding-left: 12px; padding-right: 12px; }
+/* 제목은 어떤 경우에도 최소 폭을 확보한다 — 배지·날짜가 밀어내지 못하게 */
+.civic-split .cline-title { flex: 1 1 auto; min-width: 120px; }
+.civic-split .cline-date { font-variant-numeric: tabular-nums; }
 .cdept.none { color: var(--ink-3); font-weight: 500; }
 /* 시청 밖으로 넘어간 건. 색을 달리해 부서 목록을 눈으로 셀 때 걸러지게 한다 */
 .cdept.ext { color: #9c36b5; font-weight: 600; }
