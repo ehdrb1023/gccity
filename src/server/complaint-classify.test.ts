@@ -228,11 +228,54 @@ describe('parseResolutionBody — 외부 기관으로 넘어간 건', () => {
     expect(p.agency).toBeNull();
   });
 
-  it('시청 안에서 끝난 건은 회신 기관이 비어 있다 — 없는 값을 지어내지 않는다', () => {
+  it('기관 안에서 끝난 건은 회신 기관이 비어 있다 — 없는 값을 지어내지 않는다', () => {
     const p = parseResolutionBody(
       '본 민원의 담당 부서인 과천시청 공원녹지과 하천관리팀에서 현장 출동하여 점검한 결과 오수관이 범람하였습니다.',
     );
     expect(p.department).toBe('과천시청 공원녹지과 하천관리팀');
     expect(p.agency).toBeNull();
+  });
+
+  /**
+   * ★ 이 앱은 한 도시 전용이 아니다. 위 픽스처가 전부 과천 실측이라 그것만 통과하는
+   *   정규식으로 굳기 쉽다 — 다른 지자체 이름으로도 같은 자리를 읽는지 여기서 못 박는다.
+   */
+  describe('다른 지자체 회신문도 같은 규칙으로 읽는다', () => {
+    const CASES = [
+      ['성남시청 교통정책과 주차관리팀', '성남시청 교통정책과 주차관리팀'],
+      ['양평군청 environment 없음 안전건설과', '양평군청'],
+      ['강남구청 도시관리국 공원녹지과', '강남구청 도시관리국 공원녹지과'],
+    ] as const;
+
+    for (const [org] of CASES) {
+      it(`말머리가 있으면 ${org.split(' ')[0]} 도 읽는다`, () => {
+        const p = parseResolutionBody(
+          `본 민원의 담당 부서인 ${org}에서 현장을 점검한 결과 조치가 필요하다고 판단되었습니다.`,
+        );
+        expect(p.department).toBe(org);
+      });
+    }
+
+    it('말머리 없이 적어도 기관 이름으로 시작하면 읽는다', () => {
+      const p = parseResolutionBody(
+        '성남시청 교통과 주차지도팀에서 관리단에 주차 지도를 요청 하였으며 재발 시 다시 안내하겠습니다.',
+      );
+      expect(p.department).toBe('성남시청 교통과 주차지도팀');
+    });
+
+    it('외부로 넘긴 건은 넘긴 부서와 받은 기관을 따로 읽는다', () => {
+      const p = parseResolutionBody(
+        '본 민원을 부산시청 당직실에서 담당 기관인 한국전력 남부지사에게 이관하였습니다.',
+      );
+      expect(p.department).toBe('부산시청 당직실');
+      expect(p.agency).toBe('한국전력 남부지사');
+    });
+
+    it('기관 이름을 닮은 평범한 문장은 여전히 부서로 읽지 않는다', () => {
+      const p = parseResolutionBody(
+        '성남시는 해당 사업과 관련하여 지속적으로 협의하였으며 응하고 있지 않다 라는 회신을 받았습니다.',
+      );
+      expect(p.department).toBeNull();
+    });
   });
 });
